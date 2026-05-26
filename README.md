@@ -11,6 +11,8 @@ First-version features:
 - Run all configured samples
 - Compare standard output
 - Save user output and `.oitest/outputs/report.json`
+- Show an `OIjudger` sidebar with current file, limits, sample status, and quick actions
+- Open report and sample detail pages from the sidebar
 
 Commands:
 

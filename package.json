@@ -17,6 +17,7 @@
     "onCommand:oijudger.setTimeLimit",
     "onCommand:oijudger.setMemoryLimit",
     "onCommand:oijudger.openLastReport",
+    "onCommand:oijudger.openSampleDetail",
     "onCommand:oijudger.clearOutputs",
     "onView:oijudgerSamples"
   ],
@@ -25,38 +26,82 @@
     "commands": [
       {
         "command": "oijudger.initProblem",
-        "title": "OIjudger: Init Problem"
+        "title": "OIjudger: Init Problem",
+        "icon": "$(repo-create)"
       },
       {
         "command": "oijudger.addSample",
-        "title": "OIjudger: Add Sample"
+        "title": "OIjudger: Add Sample",
+        "icon": "$(add)"
       },
       {
         "command": "oijudger.runAllSamples",
-        "title": "OIjudger: Run All Samples"
+        "title": "OIjudger: Run All Samples",
+        "icon": "$(run-all)"
       },
       {
         "command": "oijudger.setTimeLimit",
-        "title": "OIjudger: Set Time Limit"
+        "title": "OIjudger: Set Time Limit",
+        "icon": "$(watch)"
       },
       {
         "command": "oijudger.setMemoryLimit",
-        "title": "OIjudger: Set Memory Limit"
+        "title": "OIjudger: Set Memory Limit",
+        "icon": "$(server)"
       },
       {
         "command": "oijudger.openLastReport",
-        "title": "OIjudger: Open Last Report"
+        "title": "OIjudger: Open Last Report",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "oijudger.openSampleDetail",
+        "title": "OIjudger: Open Sample Detail",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "oijudger.clearOutputs",
-        "title": "OIjudger: Clear Outputs"
+        "title": "OIjudger: Clear Outputs",
+        "icon": "$(trash)"
       }
     ],
     "views": {
       "explorer": [
         {
           "id": "oijudgerSamples",
-          "name": "OIjudger Samples"
+          "name": "OIjudger"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "oijudger.runAllSamples",
+          "when": "view == oijudgerSamples",
+          "group": "navigation@1"
+        },
+        {
+          "command": "oijudger.addSample",
+          "when": "view == oijudgerSamples",
+          "group": "navigation@2"
+        },
+        {
+          "command": "oijudger.openLastReport",
+          "when": "view == oijudgerSamples",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "oijudger.openSampleDetail",
+          "when": "view == oijudgerSamples && viewItem == oijudgerSample",
+          "group": "inline@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "oijudger.openSampleDetail",
+          "when": "false"
         }
       ]
     }

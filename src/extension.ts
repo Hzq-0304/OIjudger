@@ -3,8 +3,6 @@ import {
   addSample,
   clearOutputs,
   ensureConfig,
-  exists,
-  getReportPath,
   getWorkspaceFolder,
   initProblem,
   isCppFile,
@@ -13,6 +11,7 @@ import {
   validatePositiveInteger
 } from './config';
 import { runAllSamples } from './judge';
+import { openLastReport, openSampleDetail } from './reportView';
 import { SampleTreeProvider } from './sampleTreeProvider';
 
 const output = vscode.window.createOutputChannel('OIjudger');
@@ -118,6 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       await setTimeLimit(workspaceFolder, Number(timeMsText));
+      sampleTreeProvider.refresh();
       vscode.window.showInformationMessage('OIjudger time limit updated.');
     }),
     vscode.commands.registerCommand('oijudger.setMemoryLimit', async () => {
@@ -138,22 +138,14 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       await setMemoryLimit(workspaceFolder, Number(memoryMbText));
+      sampleTreeProvider.refresh();
       vscode.window.showInformationMessage('OIjudger memory limit updated.');
     }),
     vscode.commands.registerCommand('oijudger.openLastReport', async () => {
-      const workspaceFolder = getWorkspaceFolder();
-      if (!workspaceFolder) {
-        return;
-      }
-
-      const reportPath = getReportPath(workspaceFolder);
-      if (!(await exists(reportPath))) {
-        vscode.window.showWarningMessage('No OIjudger report found. Run all samples first.');
-        return;
-      }
-
-      const document = await vscode.workspace.openTextDocument(reportPath);
-      await vscode.window.showTextDocument(document);
+      await openLastReport(context);
+    }),
+    vscode.commands.registerCommand('oijudger.openSampleDetail', async (sampleId?: number) => {
+      await openSampleDetail(context, sampleId);
     }),
     vscode.commands.registerCommand('oijudger.clearOutputs', async () => {
       const workspaceFolder = getWorkspaceFolder();
@@ -166,6 +158,15 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage('OIjudger outputs cleared.');
     }),
     output
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => sampleTreeProvider.refresh()),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      if (document.uri.fsPath.endsWith('config.json') || document.uri.fsPath.endsWith('report.json')) {
+        sampleTreeProvider.refresh();
+      }
+    })
   );
 }
 
