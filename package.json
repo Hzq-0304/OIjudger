@@ -1,8 +1,8 @@
 {
   "name": "oijudger",
   "displayName": "OIjudger",
-  "description": "A local multi-sample judge for OIers.",
-  "version": "0.2.0",
+  "description": "A local multi-sample judge for OIers with normal compare, testlib checkers, and plain checkers.",
+  "version": "0.3.0",
   "publisher": "local",
   "engines": {
     "vscode": "^1.87.0"

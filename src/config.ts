@@ -274,6 +274,9 @@ export function normalizeCheckerConfig(checker: CheckerConfig | undefined): Chec
     testlib: {
       mode: checker.testlib?.mode ?? 'auto',
       path: checker.testlib?.path ?? null
+    },
+    plain: {
+      protocolVersion: checker.plain?.protocolVersion ?? 1
     }
   };
 }

@@ -991,7 +991,8 @@ async function setCheckerCommand(
   const picked = await vscode.window.showQuickPick(
     [
       { label: t('checkerNone'), type: 'none' as const },
-      { label: t('checkerTestlib'), type: 'testlib' as const }
+      { label: t('checkerTestlib'), type: 'testlib' as const },
+      { label: t('checkerPlain'), type: 'plain' as const }
     ],
     {
       title: t('setChecker'),
@@ -1016,16 +1017,25 @@ async function setCheckerCommand(
 
   const checker = {
     enabled: true,
-    type: 'testlib' as const,
+    type: picked.type,
     source: checkerUri.fsPath,
     exe: path.join('.oitest', 'problems', context.problem.id, 'checker', process.platform === 'win32' ? 'checker.exe' : 'checker'),
     timeLimitMs: 5000,
     testlib: {
       mode: 'auto' as const,
       path: null
+    },
+    plain: {
+      protocolVersion: 1 as const
     }
   };
   await updateProblemChecker(context.workspaceFolder, context.problem.id, checker);
+  if (picked.type === 'plain') {
+    sampleTreeProvider.refresh();
+    vscode.window.showInformationMessage(`${t('plainCheckerSet')} ${t('plainCheckerLastLineHint')}`);
+    return;
+  }
+
   const testlib = await resolveTestlibForChecker(context.workspaceFolder, checkerUri.fsPath, checker);
   let testlibFound = testlib.found;
   if (!testlib.found && await bundledTestlibExists(extensionContext)) {

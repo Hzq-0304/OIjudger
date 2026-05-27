@@ -319,6 +319,12 @@ async function createSampleNodes(
         `${t('sampleInput')}: ${fileStatus.inputPath}`,
         `${t('expectedOutput')}: ${fileStatus.answerPath}`,
         `${t('source')}: ${t(sourceType === 'external' ? 'externalSample' : 'managedSample')}${missingDetail}`,
+        ...(sampleReport?.status === 'Scored' ? [
+          `${t('status')}: ${t('statusScored')}`,
+          `${t('checkerScore')}: ${sampleReport.checker?.scoreText ?? sampleReport.score ?? ''}`,
+          `${t('checker')}: ${t('plainCheckerMode')}`,
+          t('plainCheckerProtocol')
+        ] : []),
         ...(sampleReport?.checker?.message ? [`${t('checker')}: ${sampleReport.checker.message}`] : []),
         ...(sampleReport?.checker?.stdout ? [`${t('checkerOutput')}: ${sampleReport.checker.stdout}`] : []),
         ...(sampleReport?.checker?.stderr ? [`${t('checkerStderr')}: ${sampleReport.checker.stderr}`] : []),
@@ -374,6 +380,9 @@ function formatSampleDescription(
   elapsed: string
 ): string {
   const explanation = report?.status === 'RE' ? getRuntimeExplanation(report) : undefined;
+  if (status === 'Scored' && report?.checker?.scoreText !== undefined) {
+    return report.checker.scoreText;
+  }
   const statusText = explanation ? `RE: ${explanation.englishName}` : statusLabel(status);
   return elapsed ? `${statusText}  ${elapsed}` : statusText;
 }
@@ -410,7 +419,7 @@ function createSampleActionNodes(
   if (status === 'WA') {
     nodes.push(sampleActionNode(t('openDiff'), 'oijudger.openSampleDiff', 'diff', problemId, sampleId));
   }
-  if (status === 'WA' || status === 'AC' || status === 'Checker Error') {
+  if (status === 'WA' || status === 'AC' || status === 'Scored' || status === 'Checker Error') {
     nodes.push(sampleActionNode(t('checkerOutput'), 'oijudger.openCheckerOutput', 'output', problemId, sampleId));
     nodes.push(sampleActionNode(t('checkerStderr'), 'oijudger.openCheckerStderr', 'warning', problemId, sampleId));
   }
@@ -565,6 +574,8 @@ function statusIcon(status: SampleStatus | 'Not Run'): string {
     case 'WA':
     case 'Missing':
       return 'error';
+    case 'Scored':
+      return 'question';
     case 'TLE':
     case 'MLE':
       return 'watch';
@@ -591,6 +602,8 @@ function statusLabel(status: SampleStatus | 'Not Run'): string {
       return t('statusRE');
     case 'CE':
       return t('statusCE');
+    case 'Scored':
+      return t('statusScored');
     case 'Checker Error':
       return t('checkerError');
     case 'MLE':

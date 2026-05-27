@@ -165,7 +165,11 @@ function renderReportBody(
       <div><span>${escapeHtml(t('judgeMode'))}</span><strong>${escapeHtml(formatJudgeMode(report))}</strong></div>
       ${report.checker?.enabled && report.checker.source ? `<div><span>${escapeHtml(t('checker'))}</span><strong>${escapeHtml(basename(report.checker.source))}</strong></div>` : ''}
       <div><span>${escapeHtml(t('accepted'))}</span><strong>${report.summary.accepted}/${report.summary.total}</strong></div>
+      ${report.summary.wrongAnswer !== undefined ? `<div><span>${escapeHtml(t('statusWA'))}</span><strong>${report.summary.wrongAnswer}</strong></div>` : ''}
+      ${report.summary.scored ? `<div><span>${escapeHtml(t('scoredSamples'))}</span><strong>${report.summary.scored}</strong></div>` : ''}
+      ${report.summary.checkerError ? `<div><span>${escapeHtml(t('checkerError'))}</span><strong>${report.summary.checkerError}</strong></div>` : ''}
       ${report.score ? `<div><span>${escapeHtml(t('score'))}</span><strong>${report.score.earned}/${report.score.total}</strong></div>` : ''}
+      ${report.summary.scored && report.score ? `<div><span>${escapeHtml(t('checkerTotalScore'))}</span><strong>${report.score.earned}</strong></div>` : ''}
       <div><span>${escapeHtml(t('compile'))}</span><strong>${formatDuration(report.compile?.timeMs)}</strong></div>
       <div><span>${escapeHtml(t('total'))}</span><strong>${formatDuration(report.totalTimeMs)}</strong></div>
       <div><span>${escapeHtml(t('timeLimit'))}</span><strong>${report.timeLimitMs} ms</strong></div>
@@ -173,6 +177,7 @@ function renderReportBody(
       <div><span>${escapeHtml(t('stack'))}</span><strong>${escapeHtml(formatStack(report))}</strong></div>
       <div><span>${escapeHtml(t('generated'))}</span><strong>${escapeHtml(new Date(report.generatedAt).toLocaleString())}</strong></div>
     </section>
+    ${report.judgeMode === 'plain' ? `<section><h2>${escapeHtml(t('plainCheckerMode'))}</h2><p>${escapeHtml(t('plainCheckerProtocol'))}</p></section>` : ''}
     <section>
       <h2>${escapeHtml(t('source'))}</h2>
       <p class="path">${escapeHtml(report.source)}</p>
@@ -194,7 +199,13 @@ function formatStack(report: JudgeReport): string {
 }
 
 function formatJudgeMode(report: JudgeReport): string {
-  return report.judgeMode === 'testlib' ? t('testlibCheckerMode') : t('normalCompare');
+  if (report.judgeMode === 'testlib') {
+    return t('testlibCheckerMode');
+  }
+  if (report.judgeMode === 'plain') {
+    return t('plainCheckerMode');
+  }
+  return t('normalCompare');
 }
 
 function basename(filePath: string): string {
@@ -221,6 +232,7 @@ async function showSamplePanel(
       <div><span>${escapeHtml(t('elapsed'))}</span><strong>${escapeHtml(elapsed)}</strong></div>
       <div><span>${escapeHtml(t('compareTime'))}</span><strong>${escapeHtml(compareElapsed)}</strong></div>
       <div><span>${escapeHtml(t('source'))}</span><strong>${escapeHtml(t(sourceType === 'external' ? 'externalSample' : 'managedSample'))}</strong></div>
+      ${report?.status === 'Scored' ? `<div><span>${escapeHtml(t('checkerScore'))}</span><strong>${escapeHtml(report.checker?.scoreText ?? String(report.score ?? ''))}</strong></div>` : ''}
       <div><span>${escapeHtml(t('input'))}</span><strong>${escapeHtml(sample.input)}</strong></div>
       <div><span>${escapeHtml(t('answer'))}</span><strong>${escapeHtml(sample.answer)}</strong></div>
     </section>
@@ -283,6 +295,7 @@ function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: Sampl
       <dt>${escapeHtml(t('elapsed'))}</dt><dd>${formatDuration(sample.timeMs ?? sample.elapsedMs)}</dd>
       <dt>${escapeHtml(t('compareTime'))}</dt><dd>${formatDuration(sample.compareTimeMs)}</dd>
       <dt>${escapeHtml(t('source'))}</dt><dd>${escapeHtml(t(sourceType === 'external' ? 'externalSample' : 'managedSample'))}</dd>
+      ${sample.status === 'Scored' ? `<dt>${escapeHtml(t('checkerScore'))}</dt><dd>${escapeHtml(sample.checker?.scoreText ?? String(sample.score ?? ''))}</dd>` : ''}
       ${sample.score !== undefined ? `<dt>${escapeHtml(t('score'))}</dt><dd>${sample.score}</dd>` : ''}
       ${sample.checker?.message ? `<dt>${escapeHtml(t('checker'))}</dt><dd>${escapeHtml(sample.checker.message)}</dd>` : ''}
       <dt>${escapeHtml(t('input'))}</dt><dd>${escapeHtml(sample.input)}</dd>
@@ -500,6 +513,8 @@ function statusLabel(status: string): string {
       return t('statusERR');
     case 'Checker Error':
       return t('checkerError');
+    case 'Scored':
+      return t('statusScored');
     case 'Skipped':
       return t('statusSkipped');
     case 'Missing':

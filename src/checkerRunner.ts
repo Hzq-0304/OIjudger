@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { promises as fs } from 'fs';
+import { getPlainCheckerInvalidMessage, parsePlainCheckerOutput } from './plainCheckerParser';
 import { runProcess } from './runner';
 import { CheckerSampleReport } from './types';
 
@@ -86,6 +87,109 @@ export async function runTestlibChecker(input: CheckerRunInput): Promise<{
   }
 }
 
+export async function runPlainChecker(input: CheckerRunInput): Promise<{
+  status: 'AC' | 'WA' | 'Scored' | 'Checker Error';
+  score: number;
+  scoreText?: string;
+  report: CheckerSampleReport;
+}> {
+  await fs.mkdir(path.dirname(input.stdoutPath), { recursive: true });
+  const cwd = path.dirname(input.checkerSource);
+  try {
+    const result = await runProcess(
+      input.checkerExe,
+      [input.inputPath, input.userOutputPath, input.answerPath],
+      '',
+      cwd,
+      input.timeLimitMs
+    );
+    await fs.writeFile(input.stdoutPath, result.stdout, 'utf8');
+    await fs.writeFile(input.stderrPath, result.stderr, 'utf8');
+
+    if (result.killedByTimeout) {
+      return {
+        status: 'Checker Error',
+        score: 0,
+        report: createPlainReport(input, result.code, result.signal, result.timeMs, input.stdoutRel, input.stderrRel, {
+          verdict: 'Invalid',
+          message: 'Checker timed out.'
+        })
+      };
+    }
+
+    const verdict = parsePlainCheckerOutput(result.stdout);
+    if (verdict.type === 'Invalid') {
+      return {
+        status: 'Checker Error',
+        score: 0,
+        report: createPlainReport(input, result.code, result.signal, result.timeMs, input.stdoutRel, input.stderrRel, {
+          finalLine: verdict.finalLine,
+          verdict: 'Invalid',
+          message: verdict.message
+        })
+      };
+    }
+
+    const exitWarning = result.code !== 0 || result.signal
+      ? `Plain checker returned a non-zero exit code or signal, but a valid final verdict line was parsed. exitCode=${result.code ?? 'null'}, signal=${result.signal ?? 'null'}`
+      : undefined;
+    const message = [verdict.message, exitWarning].filter(Boolean).join('\n') || undefined;
+    if (verdict.type === 'AC') {
+      return {
+        status: 'AC',
+        score: 1,
+        report: createPlainReport(input, result.code, result.signal, result.timeMs, input.stdoutRel, input.stderrRel, {
+          finalLine: verdict.finalLine,
+          verdict: 'AC',
+          message
+        })
+      };
+    }
+    if (verdict.type === 'WA') {
+      return {
+        status: 'WA',
+        score: 0,
+        report: createPlainReport(input, result.code, result.signal, result.timeMs, input.stdoutRel, input.stderrRel, {
+          finalLine: verdict.finalLine,
+          verdict: 'WA',
+          message
+        })
+      };
+    }
+
+    return {
+      status: 'Scored',
+      score: verdict.score,
+      scoreText: verdict.scoreText,
+      report: createPlainReport(input, result.code, result.signal, result.timeMs, input.stdoutRel, input.stderrRel, {
+        finalLine: verdict.finalLine,
+        verdict: 'Score',
+        score: verdict.score,
+        scoreText: verdict.scoreText,
+        message
+      })
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await fs.writeFile(input.stdoutPath, '', 'utf8');
+    await fs.writeFile(input.stderrPath, message, 'utf8');
+    return {
+      status: 'Checker Error',
+      score: 0,
+      report: {
+        enabled: true,
+        type: 'plain',
+        source: input.checkerSource,
+        exe: input.checkerExe,
+        stdout: input.stdoutRel,
+        stderr: input.stderrRel,
+        verdict: 'Invalid',
+        message: `Checker run failed: ${message}`
+      }
+    };
+  }
+}
+
 function createReport(
   input: CheckerRunInput,
   exitCode: number | null,
@@ -107,6 +211,39 @@ function createReport(
     stdout: stdoutRel,
     stderr: stderrRel,
     message
+  };
+}
+
+function createPlainReport(
+  input: CheckerRunInput,
+  exitCode: number | null,
+  signal: NodeJS.Signals | null,
+  timeMs: number,
+  stdoutRel: string,
+  stderrRel: string,
+  details: {
+    finalLine?: string;
+    verdict: 'AC' | 'WA' | 'Score' | 'Invalid';
+    score?: number;
+    scoreText?: string;
+    message?: string;
+  }
+): CheckerSampleReport {
+  return {
+    enabled: true,
+    type: 'plain',
+    source: input.checkerSource,
+    exe: input.checkerExe,
+    exitCode,
+    signal,
+    timeMs,
+    stdout: stdoutRel,
+    stderr: stderrRel,
+    finalLine: details.finalLine,
+    verdict: details.verdict,
+    score: details.score,
+    scoreText: details.scoreText,
+    message: details.message ?? (details.verdict === 'Invalid' ? getPlainCheckerInvalidMessage() : undefined)
   };
 }
 

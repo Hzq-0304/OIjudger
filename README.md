@@ -141,6 +141,103 @@ checker.exe input.txt useroutput.txt answer.txt
 - Normal compare is unchanged when no checker is enabled.
 - Later versions may add `score-json`, `score-plain`, and partial score checker protocols.
 
+Plain Checker:
+
+Plain Checker is a simple custom checker that does not depend on `testlib.h`.
+
+OIjudger runs it with the same arguments as a testlib checker:
+
+```text
+checker.exe input.txt useroutput.txt answer.txt
+```
+
+The last non-empty line of stdout must be one of:
+
+- `AC`
+- `WA`
+- a numeric score
+
+Examples:
+
+```text
+AC
+```
+
+This marks the sample as accepted.
+
+```text
+WA
+```
+
+This marks the sample as wrong answer.
+
+```text
+37.5
+```
+
+This returns a score of `37.5`. OIjudger shows a question mark icon and displays `37.5` on the right side. It does not mark the sample as accepted or wrong.
+
+Important: if you want WA, output `WA`. If you output `0`, OIjudger treats it as score `0`, not as WA. If you output `100`, OIjudger treats it as score `100`, not as AC.
+
+Invalid final lines include:
+
+- `Accepted`
+- `Wrong Answer`
+- `75%`
+- `score: 75`
+- `通过`
+
+These are reported as `Checker Error`.
+
+Minimal Plain Checker example:
+
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+int main(int argc, char** argv) {
+    if (argc < 4) {
+        cout << "WA\n";
+        return 0;
+    }
+
+    ifstream user(argv[2]);
+    ifstream ans(argv[3]);
+
+    long long a, b;
+    user >> a;
+    ans >> b;
+
+    cout << (a == b ? "AC" : "WA") << '\n';
+    return 0;
+}
+```
+
+Score example:
+
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+int main(int argc, char** argv) {
+    ifstream user(argv[2]);
+    ifstream ans(argv[3]);
+
+    int correct = 0, total = 10;
+    for (int i = 0; i < total; i++) {
+        int x, y;
+        if (!(user >> x)) break;
+        ans >> y;
+        if (x == y) correct++;
+    }
+
+    cout << fixed << setprecision(1) << correct * 10.0 << '\n';
+    return 0;
+}
+```
+
+If the last line is `70.0`, OIjudger shows a question mark icon and score `70.0`.
+
 Commands:
 
 - `OIjudger: Init Problem`

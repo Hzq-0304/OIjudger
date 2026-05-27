@@ -1,7 +1,7 @@
 import type { RuntimeErrorSummary } from './runtimeErrorExplainer';
 
 export type SampleSourceType = 'managed' | 'external';
-export type CheckerType = 'none' | 'testlib';
+export type CheckerType = 'none' | 'testlib' | 'plain';
 export type TestlibMode = 'auto' | 'managed' | 'custom';
 
 export type ProblemStatementType = 'markdown' | 'pdf' | 'text' | 'unknown';
@@ -38,6 +38,9 @@ export type CheckerConfig = {
   testlib?: {
     mode: TestlibMode;
     path?: string | null;
+  };
+  plain?: {
+    protocolVersion?: 1;
   };
 };
 
@@ -113,7 +116,7 @@ export type CompileStackReport = {
   unsupported?: boolean;
 };
 
-export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Checker Error' | 'Skipped' | 'Missing';
+export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Checker Error' | 'Scored' | 'Skipped' | 'Missing';
 
 export type CheckerSampleReport = {
   enabled: boolean;
@@ -126,6 +129,10 @@ export type CheckerSampleReport = {
   timeMs?: number;
   stdout?: string;
   stderr?: string;
+  finalLine?: string;
+  verdict?: 'AC' | 'WA' | 'Score' | 'Invalid';
+  score?: number;
+  scoreText?: string;
   message?: string;
 };
 
@@ -174,11 +181,14 @@ export type JudgeReport = {
   totalTimeMs?: number;
   timeLimitMs: number;
   memoryLimitMb: number;
-  judgeMode?: 'normal' | 'testlib';
+  judgeMode?: 'normal' | 'testlib' | 'plain';
   checker?: CheckerConfig;
   summary: {
     accepted: number;
     total: number;
+    wrongAnswer?: number;
+    scored?: number;
+    checkerError?: number;
   };
   score?: {
     earned: number;

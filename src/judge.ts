@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { promises as fs } from 'fs';
-import { compileTestlibChecker, CheckerCompileResult, getCheckerTimeLimitMs } from './checkerCompiler';
-import { runTestlibChecker } from './checkerRunner';
+import { compileChecker, CheckerCompileResult, getCheckerTimeLimitMs } from './checkerCompiler';
+import { runPlainChecker, runTestlibChecker } from './checkerRunner';
 import { compileSource } from './compiler';
 import { isOutputAccepted } from './comparator';
 import { getReportPath, resolveWorkspacePath } from './config';
@@ -26,6 +26,7 @@ import { CheckerSampleReport, CompileStackReport, JudgeReport, OITestConfig, Pro
 type RunClassification = 'TLE' | 'RE' | undefined;
 
 type CheckerContext = {
+  type: 'testlib' | 'plain';
   source: string;
   exe: string;
   testlibPath?: string;
@@ -55,19 +56,20 @@ export async function runAllSamples(
   const samples: SampleReport[] = [];
   const problemId = (config as { id?: string }).id;
   const runCwd = path.dirname(sourcePath);
-  const checkerCompile = problemId && config.checker?.enabled && config.checker.type === 'testlib'
-    ? await compileTestlibChecker(workspaceFolder, problemId, config, output)
+  const checkerCompile = problemId && config.checker?.enabled && config.checker.type !== 'none'
+    ? await compileChecker(workspaceFolder, problemId, config, output)
     : undefined;
   const checkerContext = checkerCompile?.ok
-    ? {
+      ? {
+        type: checkerCompile.type,
         source: checkerCompile.source,
         exe: checkerCompile.exe,
-        testlibPath: checkerCompile.testlib.testlibPath,
+        testlibPath: checkerCompile.testlib?.testlibPath,
         timeLimitMs: getCheckerTimeLimitMs(config.checker)
       }
     : undefined;
 
-  if (config.checker?.enabled && config.checker.type === 'testlib' && checkerCompile && !checkerCompile.ok) {
+  if (config.checker?.enabled && config.checker.type !== 'none' && checkerCompile && !checkerCompile.ok) {
     for (const sample of config.samples) {
       samples.push(createCheckerErrorSampleReport(workspaceFolder, sourcePath, compile.executablePath, runCwd, sample, problemId, checkerCompile));
     }
@@ -89,6 +91,9 @@ export async function runAllSamples(
   }
 
   const accepted = samples.filter((sample) => sample.status === 'AC').length;
+  const wrongAnswer = samples.filter((sample) => sample.status === 'WA').length;
+  const scored = samples.filter((sample) => sample.status === 'Scored').length;
+  const checkerError = samples.filter((sample) => sample.status === 'Checker Error').length;
   const earnedScore = samples.reduce((sum, sample) => sum + (sample.score ?? (sample.status === 'AC' ? 1 : 0)), 0);
   const totalTimeMs = elapsedMs(totalStartedAt);
   const report: JudgeReport = {
@@ -102,13 +107,16 @@ export async function runAllSamples(
       stack: compile.stack
     },
     totalTimeMs,
-    judgeMode: config.checker?.enabled && config.checker.type === 'testlib' ? 'testlib' : 'normal',
+    judgeMode: config.checker?.enabled && config.checker.type !== 'none' ? config.checker.type : 'normal',
     checker: config.checker?.enabled ? config.checker : undefined,
     timeLimitMs: config.limits.timeMs,
     memoryLimitMb: config.limits.memoryMb,
     summary: {
       accepted,
-      total: samples.length
+      total: samples.length,
+      wrongAnswer,
+      scored,
+      checkerError
     },
     score: {
       earned: earnedScore,
@@ -344,7 +352,7 @@ async function judgeSample(
     const checkerStdoutRel = outputPaths.outputRel.replace(/useroutput\.txt$/u, 'checker-stdout.txt');
     const checkerStderrRel = outputPaths.outputRel.replace(/useroutput\.txt$/u, 'checker-stderr.txt');
     const checkerStartedAt = process.hrtime.bigint();
-    const checkerResult = await runTestlibChecker({
+    const checkerInput = {
       checkerSource: checkerContext.source,
       checkerExe: checkerContext.exe,
       testlibPath: checkerContext.testlibPath,
@@ -356,9 +364,15 @@ async function judgeSample(
       stdoutRel: checkerStdoutRel,
       stderrRel: checkerStderrRel,
       timeLimitMs: checkerContext.timeLimitMs
-    });
+    };
+    const checkerResult = checkerContext.type === 'plain'
+      ? await runPlainChecker(checkerInput)
+      : await runTestlibChecker(checkerInput);
     const checkerTimeMs = elapsedMs(checkerStartedAt);
-    output.appendLine(`[${checkerResult.status}] ${sample.name} (${formatMs(result.timeMs)} ms, checker ${formatMs(checkerResult.report.timeMs ?? checkerTimeMs)} ms)`);
+    const scoreSuffix = checkerResult.status === 'Scored' && checkerResult.report.scoreText
+      ? ` score ${checkerResult.report.scoreText}`
+      : '';
+    output.appendLine(`[${checkerResult.status}] ${sample.name}${scoreSuffix} (${formatMs(result.timeMs)} ms, checker ${formatMs(checkerResult.report.timeMs ?? checkerTimeMs)} ms)`);
     output.appendLine(`${sample.name} run time: ${formatMs(result.timeMs)} ms`);
     output.appendLine(`${sample.name} checker time: ${formatMs(checkerResult.report.timeMs ?? checkerTimeMs)} ms`);
     if (checkerResult.report.message) {
@@ -480,10 +494,10 @@ function createCheckerErrorSampleReport(
     0,
     {
       enabled: true,
-      type: 'testlib',
+      type: checkerCompile.type,
       source: checkerCompile.source,
       exe: checkerCompile.exe,
-      testlibPath: checkerCompile.testlib.testlibPath,
+      testlibPath: checkerCompile.testlib?.testlibPath,
       stderr: checkerCompile.stderrPath,
       message: checkerCompile.message
     }
