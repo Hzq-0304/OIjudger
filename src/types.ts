@@ -17,7 +17,8 @@ export type ProblemSource = {
 };
 
 export type SampleConfig = {
-  id: number;
+  id: string;
+  index: number;
   name: string;
   input: string;
   answer: string;
@@ -100,7 +101,8 @@ export type CompileStackReport = {
 export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Skipped' | 'Missing';
 
 export type SampleReport = {
-  id: number;
+  id: string;
+  index: number;
   name: string;
   status: SampleStatus;
   timeMs: number;

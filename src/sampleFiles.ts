@@ -95,7 +95,7 @@ export function getProblemSampleOutputPaths(
 }
 
 export function getLegacyOutputRel(sample: SampleConfig): string {
-  return sample.actualOutput ?? toPosixPath(path.join('.oitest', 'outputs', `${sample.id}.out`));
+  return sample.actualOutput ?? toPosixPath(path.join('.oitest', 'outputs', `${sample.index}.out`));
 }
 
 export async function findExistingUserOutput(
@@ -133,7 +133,7 @@ export function getUserOutputCandidates(
 ): string[] {
   const candidates = new Set<string>();
   if (problemId) {
-    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.id);
+    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.index);
     candidates.add(paths.outputPath);
     candidates.add(paths.legacyOutputPath);
   }
@@ -150,7 +150,7 @@ export function getStderrOutputCandidates(
 ): string[] {
   const candidates = new Set<string>();
   if (problemId) {
-    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.id);
+    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.index);
     candidates.add(paths.stderrPath);
     candidates.add(paths.legacyStderrPath);
   }

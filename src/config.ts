@@ -82,13 +82,14 @@ export async function addSample(
   answer: string,
   options: { decodeEscapes?: boolean } = {}
 ): Promise<SampleConfig> {
-  const id = nextSampleId(config);
+  const index = getNextSampleIndex(config);
   const sample: SampleConfig = {
-    id,
-    name: `Sample ${id}`,
-    input: toPosixPath(path.join('.oitest', 'samples', `${id}.in`)),
-    answer: toPosixPath(path.join('.oitest', 'samples', `${id}.ans`)),
-    actualOutput: toPosixPath(path.join('.oitest', 'outputs', `${id}.out`)),
+    id: createSampleInternalId(index),
+    index,
+    name: `Sample ${index}`,
+    input: toPosixPath(path.join('.oitest', 'samples', `${index}.in`)),
+    answer: toPosixPath(path.join('.oitest', 'samples', `${index}.ans`)),
+    actualOutput: toPosixPath(path.join('.oitest', 'outputs', `${index}.out`)),
     sourceType: 'managed'
   };
 
@@ -118,13 +119,15 @@ export async function addExternalSample(
   inputPath: string,
   answerPath: string
 ): Promise<SampleConfig> {
-  const id = nextSampleId(config);
+  const index = getNextSampleIndex(config);
+  const baseName = getSampleDisplayNameFromInput(inputPath);
   const sample: SampleConfig = {
-    id,
-    name: `Sample ${id}`,
+    id: createSampleInternalId(index),
+    index,
+    name: uniqueSampleName(config.samples, baseName),
     input: path.resolve(inputPath),
     answer: path.resolve(answerPath),
-    actualOutput: toPosixPath(path.join('.oitest', 'outputs', `${id}.out`)),
+    actualOutput: toPosixPath(path.join('.oitest', 'outputs', `${index}.out`)),
     sourceType: 'external'
   };
 
@@ -207,16 +210,17 @@ export function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
 }
 
-function normalizeSample(sample: SampleConfig, fallbackId: number): SampleConfig {
-  const id = sample.id ?? fallbackId;
-  const answer = sample.answer ?? sample.expectedOutput ?? toPosixPath(path.join('.oitest', 'samples', `${id}.ans`));
+function normalizeSample(sample: SampleConfig, fallbackIndex: number): SampleConfig {
+  const index = resolveSampleIndex(sample, fallbackIndex);
+  const answer = sample.answer ?? sample.expectedOutput ?? toPosixPath(path.join('.oitest', 'samples', `${index}.ans`));
   return {
     ...sample,
-    id,
-    name: sample.name ?? `Sample ${id}`,
+    id: normalizeSampleInternalId(sample.id, index),
+    index,
+    name: sample.name ?? `Sample ${index}`,
     answer,
-    actualOutput: sample.actualOutput ?? toPosixPath(path.join('.oitest', 'outputs', `${id}.out`)),
-    sourceType: sample.sourceType ?? 'managed'
+    actualOutput: sample.actualOutput ?? toPosixPath(path.join('.oitest', 'outputs', `${index}.out`)),
+    sourceType: sample.sourceType ?? inferConfigSampleSourceType(sample)
   };
 }
 
@@ -251,12 +255,44 @@ export function normalizeStackConfig(stack: StackConfig | undefined): StackConfi
   };
 }
 
-function nextSampleId(config: OITestConfig): number {
+export function getNextSampleIndex(config: Pick<OITestConfig, 'samples'>): number {
   return config.samples.reduce((maxId, sample) => Math.max(maxId, ...sampleNumberCandidates(sample)), 0) + 1;
+}
+
+export function createSampleInternalId(index: number): string {
+  return `sample-${index}`;
+}
+
+export function getSampleDisplayNameFromInput(inputPath: string): string {
+  return path.parse(inputPath).name || path.basename(inputPath) || 'sample';
+}
+
+export function uniqueSampleName(samples: Array<Pick<SampleConfig, 'name'>>, desiredName: string): string {
+  const baseName = desiredName.trim() || 'sample';
+  const existing = new Set(samples.map((sample) => sample.name.toLowerCase()));
+  if (!existing.has(baseName.toLowerCase())) {
+    return baseName;
+  }
+
+  let suffix = 2;
+  while (existing.has(`${baseName} (${suffix})`.toLowerCase())) {
+    suffix += 1;
+  }
+  return `${baseName} (${suffix})`;
+}
+
+export function resolveSampleIndex(sample: SampleConfig, fallbackIndex: number): number {
+  return sampleNumberCandidates(sample).find((value) => value > 0) ?? fallbackIndex;
+}
+
+export function normalizeSampleInternalId(id: SampleConfig['id'] | number | undefined, index: number): string {
+  return typeof id === 'string' && id.trim() ? id : createSampleInternalId(index);
 }
 
 function sampleNumberCandidates(sample: SampleConfig): number[] {
   const values = [
+    sample.index,
+    parseSampleIndexFromId(sample.id),
     sample.id,
     parseSampleNumber(sample.name),
     parseSampleNumber(sample.input),
@@ -264,6 +300,14 @@ function sampleNumberCandidates(sample: SampleConfig): number[] {
     parseSampleNumber(sample.actualOutput ?? '')
   ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
   return values.length > 0 ? values : [0];
+}
+
+function parseSampleIndexFromId(value: SampleConfig['id'] | number | undefined): number | undefined {
+  if (typeof value === 'number') {
+    return value;
+  }
+  const match = /^sample-(\d+)$/iu.exec(value ?? '');
+  return match ? Number(match[1]) : undefined;
 }
 
 function parseSampleNumber(value: string | undefined): number | undefined {
@@ -275,6 +319,10 @@ function parseSampleNumber(value: string | undefined): number | undefined {
     /(?:^|[\\/])sample-(\d+)(?:[\\/]|$)/iu.exec(value) ??
     /(?:^|[\\/])(\d+)\.(?:in|ans|out|err|diff)$/iu.exec(value);
   return match ? Number(match[1]) : undefined;
+}
+
+function inferConfigSampleSourceType(sample: SampleConfig): SampleConfig['sourceType'] {
+  return path.isAbsolute(sample.input) || path.isAbsolute(sample.answer) ? 'external' : 'managed';
 }
 
 function decodeEscapes(value: string): string {

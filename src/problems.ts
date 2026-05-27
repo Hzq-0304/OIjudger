@@ -7,10 +7,16 @@ import {
   getConfigPath,
   getOITestDir,
   readConfig,
+  createSampleInternalId,
+  getNextSampleIndex,
+  getSampleDisplayNameFromInput,
   normalizeStackConfig,
+  normalizeSampleInternalId,
+  resolveSampleIndex,
   resolveWorkspacePath,
   setCompilerCommand,
-  toPosixPath
+  toPosixPath,
+  uniqueSampleName
 } from './config';
 import {
   getProblemSampleOutputPaths,
@@ -181,11 +187,13 @@ export async function addExternalProblemSample(
   }
 
   await ensureProblemFolders(workspaceFolder, problem.id);
-  const id = nextSampleId(problem);
-  const outputRel = getProblemSampleOutputPaths(workspaceFolder, problem.id, id).outputRel;
+  const index = getNextSampleIndex(problem);
+  const outputRel = getProblemSampleOutputPaths(workspaceFolder, problem.id, index).outputRel;
+  const baseName = getSampleDisplayNameFromInput(inputPath);
   const sample: SampleConfig = {
-    id,
-    name: `Sample ${id}`,
+    id: createSampleInternalId(index),
+    index,
+    name: uniqueSampleName(problem.samples, baseName),
     input: path.resolve(inputPath),
     answer: path.resolve(answerPath),
     actualOutput: outputRel,
@@ -200,7 +208,7 @@ export async function addExternalProblemSample(
 export async function batchAddExternalProblemSamples(
   workspaceFolder: vscode.WorkspaceFolder,
   problemId: string,
-  pairs: Array<{ inputPath: string; answerPath: string }>
+  pairs: Array<{ inputPath: string; answerPath: string; baseName?: string }>
 ): Promise<{ added: SampleConfig[]; duplicates: Array<{ inputPath: string; answerPath: string }> } | undefined> {
   const problems = await ensureProblemsConfig(workspaceFolder);
   const problem = findProblem(problems, problemId);
@@ -221,13 +229,15 @@ export async function batchAddExternalProblemSamples(
       continue;
     }
 
-    const id = nextSampleId(problem);
+    const index = getNextSampleIndex(problem);
+    const baseName = pair.baseName?.trim() || getSampleDisplayNameFromInput(inputPath);
     const sample: SampleConfig = {
-      id,
-      name: `Sample ${id}`,
+      id: createSampleInternalId(index),
+      index,
+      name: uniqueSampleName([...problem.samples, ...added], baseName),
       input: inputPath,
       answer: answerPath,
-      actualOutput: getProblemSampleOutputPaths(workspaceFolder, problem.id, id).outputRel,
+      actualOutput: getProblemSampleOutputPaths(workspaceFolder, problem.id, index).outputRel,
       sourceType: 'external'
     };
     problem.samples.push(sample);
@@ -351,7 +361,7 @@ export async function deleteProblemSample(
 ): Promise<{ sample?: SampleConfig; cleanupErrors: string[]; reportCleared: boolean }> {
   const problems = await ensureProblemsConfig(workspaceFolder);
   const problem = findProblem(problems, problemId);
-  const sampleIndex = problem?.samples.findIndex((entry) => entry.id === sampleId) ?? -1;
+  const sampleIndex = problem?.samples.findIndex((entry) => entry.index === sampleId) ?? -1;
   if (!problem || sampleIndex < 0) {
     return { cleanupErrors: [], reportCleared: false };
   }
@@ -420,17 +430,18 @@ async function addProblemSampleFiles(
   answer: string
 ): Promise<SampleConfig> {
   await ensureProblemFolders(workspaceFolder, problem.id);
-  const id = nextSampleId(problem);
-  const inputRel = toPosixPath(path.join('.oitest', 'problems', problem.id, 'samples', `${id}.in`));
-  const answerRel = toPosixPath(path.join('.oitest', 'problems', problem.id, 'samples', `${id}.ans`));
-  const outputRel = getProblemSampleOutputPaths(workspaceFolder, problem.id, id).outputRel;
+  const index = getNextSampleIndex(problem);
+  const inputRel = toPosixPath(path.join('.oitest', 'problems', problem.id, 'samples', `${index}.in`));
+  const answerRel = toPosixPath(path.join('.oitest', 'problems', problem.id, 'samples', `${index}.ans`));
+  const outputRel = getProblemSampleOutputPaths(workspaceFolder, problem.id, index).outputRel;
 
   await fs.writeFile(resolveWorkspacePath(workspaceFolder, inputRel), input, 'utf8');
   await fs.writeFile(resolveWorkspacePath(workspaceFolder, answerRel), answer, 'utf8');
 
   return {
-    id,
-    name: `Sample ${id}`,
+    id: createSampleInternalId(index),
+    index,
+    name: `Sample ${index}`,
     input: inputRel,
     answer: answerRel,
     actualOutput: outputRel,
@@ -486,14 +497,15 @@ function normalizeProblemSample(
   problemId: string,
   fallbackId: number
 ): SampleConfig {
-  const id = sample.id ?? fallbackId;
-  const outputRel = toPosixPath(path.join('.oitest', 'problems', problemId, 'outputs', `sample-${id}`, 'useroutput.txt'));
+  const index = resolveSampleIndex(sample, fallbackId);
+  const outputRel = toPosixPath(path.join('.oitest', 'problems', problemId, 'outputs', `sample-${index}`, 'useroutput.txt'));
   return {
     ...sample,
-    id,
-    name: sample.name ?? `Sample ${id}`,
-    answer: sample.answer ?? sample.expectedOutput ?? toPosixPath(path.join('.oitest', 'problems', problemId, 'samples', `${id}.ans`)),
-    actualOutput: sample.actualOutput?.endsWith(`${id}.out`) ? outputRel : (sample.actualOutput ?? outputRel),
+    id: normalizeSampleInternalId(sample.id, index),
+    index,
+    name: sample.name ?? `Sample ${index}`,
+    answer: sample.answer ?? sample.expectedOutput ?? toPosixPath(path.join('.oitest', 'problems', problemId, 'samples', `${index}.ans`)),
+    actualOutput: sample.actualOutput?.endsWith(`${index}.out`) ? outputRel : (sample.actualOutput ?? outputRel),
     sourceType: sample.sourceType ?? inferSampleSourceType(workspaceFolder, sample)
   };
 }
@@ -556,32 +568,6 @@ function getStatementType(statementPath: string): ProblemStatementType {
   }
 }
 
-function nextSampleId(problem: OITestConfig): number {
-  return problem.samples.reduce((maxId, sample) => Math.max(maxId, ...sampleNumberCandidates(sample)), 0) + 1;
-}
-
-function sampleNumberCandidates(sample: SampleConfig): number[] {
-  const values = [
-    sample.id,
-    parseSampleNumber(sample.name),
-    parseSampleNumber(sample.input),
-    parseSampleNumber(sample.answer),
-    parseSampleNumber(sample.actualOutput ?? '')
-  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
-  return values.length > 0 ? values : [0];
-}
-
-function parseSampleNumber(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const match =
-    /\bSample\s+(\d+)\b/iu.exec(value) ??
-    /(?:^|[\\/])sample-(\d+)(?:[\\/]|$)/iu.exec(value) ??
-    /(?:^|[\\/])(\d+)\.(?:in|ans|out|err|diff)$/iu.exec(value);
-  return match ? Number(match[1]) : undefined;
-}
-
 async function removeManagedSampleFiles(
   workspaceFolder: vscode.WorkspaceFolder,
   sample: SampleConfig,
@@ -603,7 +589,7 @@ async function removeSampleOutputs(
   sample: SampleConfig,
   cleanupErrors: string[]
 ): Promise<void> {
-  const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.id);
+  const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.index);
   await removePath(path.dirname(paths.outputPath), cleanupErrors);
   await removePath(paths.legacyOutputPath, cleanupErrors);
   await removePath(paths.legacyStderrPath, cleanupErrors);
@@ -629,8 +615,9 @@ async function updateReportAfterSampleDeleted(
 
   try {
     const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as JudgeReport;
-    const filter = (entry: { id?: number; name?: string; input?: string; answer?: string }) =>
+    const filter = (entry: { id?: string; index?: number; name?: string; input?: string; answer?: string }) =>
       entry.id !== sample.id &&
+      entry.index !== sample.index &&
       entry.name !== sample.name &&
       (entry.input !== sample.input || entry.answer !== sample.answer);
     report.samples = (report.samples ?? []).filter(filter);

@@ -1278,7 +1278,7 @@ async function deleteSampleCommand(
   }
 
   try {
-    const result = await deleteProblemSample(target.workspaceFolder, target.problem.id, target.sample.id);
+    const result = await deleteProblemSample(target.workspaceFolder, target.problem.id, target.sample.index);
     if (!result.sample) {
       vscode.window.showWarningMessage(t('sampleNotFound'));
       return;
@@ -1364,7 +1364,7 @@ async function getSampleContext(
     return undefined;
   }
 
-  const sample = context.problem.samples.find((entry) => entry.id === sampleId);
+  const sample = context.problem.samples.find((entry) => entry.index === sampleId);
   if (!sample) {
     vscode.window.showWarningMessage(t('sampleNotFound'));
     return undefined;

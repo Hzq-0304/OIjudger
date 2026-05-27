@@ -41,13 +41,15 @@ export async function openSampleDetail(context: vscode.ExtensionContext, sampleI
 
   const config = await ensureConfig(workspaceFolder);
   const report = await readReport(workspaceFolder);
-  const sample = config.samples.find((entry) => entry.id === sampleId);
+  const sample = config.samples.find((entry) => entry.index === sampleId);
   if (!sample) {
     vscode.window.showWarningMessage(t('sampleNotFound'));
     return;
   }
 
-  await showSamplePanel(context, workspaceFolder, sample, report?.samples.find((entry) => entry.id === sample.id));
+  await showSamplePanel(context, workspaceFolder, sample, report?.samples.find((entry) =>
+    entry.id === sample.id || entry.index === sample.index || entry.name === sample.name
+  ));
 }
 
 export async function openProblemReport(context: vscode.ExtensionContext, problemId: string): Promise<void> {
@@ -98,13 +100,15 @@ export async function openProblemSampleDetail(
   }
 
   const report = await readReportFile(getProblemReportPath(workspaceFolder, problemId));
-  const sample = problem.samples.find((entry) => entry.id === sampleId);
+  const sample = problem.samples.find((entry) => entry.index === sampleId);
   if (!sample) {
     vscode.window.showWarningMessage(t('sampleNotFound'));
     return;
   }
 
-  await showSamplePanel(context, workspaceFolder, sample, report?.samples.find((entry) => entry.id === sample.id), problemId);
+  await showSamplePanel(context, workspaceFolder, sample, report?.samples.find((entry) =>
+    entry.id === sample.id || entry.index === sample.index || entry.name === sample.name
+  ), problemId);
 }
 
 async function readReport(workspaceFolder: vscode.WorkspaceFolder): Promise<JudgeReport | undefined> {
@@ -217,7 +221,7 @@ async function showSamplePanel(
     ${report?.message ? `<section><h2>${escapeHtml(t('message'))}</h2><p>${escapeHtml(report.message)}</p></section>` : ''}
     <section>
       <h2>${escapeHtml(t('actions'))}</h2>
-      ${renderActionButtons(sample.id, problemId, status)}
+      ${renderActionButtons(sample.index, problemId, status)}
     </section>`
   );
 }
@@ -260,6 +264,7 @@ function createPanel(context: vscode.ExtensionContext, title: string, problemId?
 function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: SampleReport, problemId?: string): string {
   const outputPath = resolveWorkspacePath(workspaceFolder, sample.output ?? sample.actualOutput);
   const sourceType = sample.sampleSourceType ?? 'managed';
+  const sampleIndex = getReportSampleIndex(sample);
   return `<article class="sample">
     <div class="sampleHead">
       <strong>${escapeHtml(sample.name)}</strong>
@@ -276,7 +281,7 @@ function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: Sampl
     ${sample.message ? `<p>${escapeHtml(sample.message)}</p>` : ''}
     ${renderRuntimeErrorDetails(sample)}
     <p class="path">${escapeHtml(outputPath)}</p>
-    ${renderActionButtons(sample.id, problemId, sample.status)}
+    ${renderActionButtons(sampleIndex, problemId, sample.status)}
   </article>`;
 }
 
@@ -302,17 +307,38 @@ function renderRuntimeErrorDetails(sample: SampleReport): string {
   </section>`;
 }
 
-function renderActionButtons(sampleId: number, problemId: string | undefined, status: string): string {
-  const disabled = problemId ? '' : ' disabled';
+function renderActionButtons(sampleId: number | undefined, problemId: string | undefined, status: string): string {
+  const disabled = problemId && sampleId !== undefined ? '' : ' disabled';
   const diffDisabled = status === 'WA' ? disabled : ' disabled';
+  const sampleValue = sampleId ?? '';
   return `<div class="buttons">
-    <button data-command="input" data-sample="${sampleId}"${disabled}>${escapeHtml(t('input'))}</button>
-    <button data-command="expected" data-sample="${sampleId}"${disabled}>${escapeHtml(t('expectedOutput'))}</button>
-    <button data-command="output" data-sample="${sampleId}"${disabled}>${escapeHtml(t('userOutput'))}</button>
-    <button data-command="stderr" data-sample="${sampleId}"${disabled}>${escapeHtml(t('openStderr'))}</button>
-    <button data-command="diff" data-sample="${sampleId}"${diffDisabled}>${escapeHtml(t('openDiff'))}</button>
-    <button data-command="delete" data-sample="${sampleId}"${disabled}>${escapeHtml(t('delete'))}</button>
+    <button data-command="input" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('input'))}</button>
+    <button data-command="expected" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('expectedOutput'))}</button>
+    <button data-command="output" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('userOutput'))}</button>
+    <button data-command="stderr" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('openStderr'))}</button>
+    <button data-command="diff" data-sample="${sampleValue}"${diffDisabled}>${escapeHtml(t('openDiff'))}</button>
+    <button data-command="delete" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('delete'))}</button>
   </div>`;
+}
+
+function getReportSampleIndex(sample: SampleReport): number | undefined {
+  if (typeof sample.index === 'number' && Number.isFinite(sample.index) && sample.index > 0) {
+    return sample.index;
+  }
+
+  const rawId = (sample as { id?: unknown }).id;
+  if (typeof rawId === 'number' && Number.isFinite(rawId) && rawId > 0) {
+    return rawId;
+  }
+  if (typeof rawId === 'string') {
+    const idMatch = /^sample-(\d+)$/iu.exec(rawId);
+    if (idMatch) {
+      return Number(idMatch[1]);
+    }
+  }
+
+  const nameMatch = /\bSample\s+(\d+)\b/iu.exec(sample.name);
+  return nameMatch ? Number(nameMatch[1]) : undefined;
 }
 
 function renderPage(title: string, body: string): string {

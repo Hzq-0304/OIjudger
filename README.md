@@ -59,6 +59,15 @@ Batch add samples:
 - Batch-added samples are external samples: OIjudger stores absolute paths only and does not copy or modify the files.
 - Inputs without matching answer files and duplicate sample pairs are skipped and summarized.
 
+Sample names:
+
+- Manually pasted samples keep the default `Sample x` name.
+- Samples added from files use the input file basename as the visible sample name.
+- For example, `book3.in` with `book3.ans` is shown as `book3`; `1.in` with `1.out` is shown as `1`.
+- Batch-added samples use each matched basename as the sample name.
+- OIjudger still uses a stable internal `id` and `index` for output folders such as `outputs/sample-7/`, so display names do not affect deletion, reports, or diff paths.
+- If a sample name already exists, OIjudger appends ` (2)`, ` (3)`, and so on.
+
 Sample viewing:
 
 - Sample input, expected output, and user output open in the native VSCode text editor.

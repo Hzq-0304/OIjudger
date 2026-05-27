@@ -295,7 +295,9 @@ async function createSampleNodes(
 
   const report = await readReport(workspaceFolder, problem.id);
   return Promise.all(problem.samples.map(async (sample) => {
-    const sampleReport = report?.samples.find((entry) => entry.id === sample.id);
+    const sampleReport = report?.samples.find((entry) =>
+      entry.id === sample.id || entry.index === sample.index || entry.name === sample.name
+    );
     const fileStatus = await getSampleFileStatus(workspaceFolder, sample);
     const missing = fileStatus.inputMissing || fileStatus.answerMissing;
     const status = missing ? 'Missing' : (sampleReport?.status ?? 'Not Run');
@@ -310,6 +312,8 @@ async function createSampleNodes(
       label: sample.name,
       description,
       tooltip: [
+        `${t('sampleName')}: ${sample.name}`,
+        `${t('internalId')}: ${sample.id}`,
         `${t('sampleInput')}: ${fileStatus.inputPath}`,
         `${t('expectedOutput')}: ${fileStatus.answerPath}`,
         `${t('source')}: ${t(sourceType === 'external' ? 'externalSample' : 'managedSample')}${missingDetail}`,
@@ -321,7 +325,7 @@ async function createSampleNodes(
       collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
       group: 'sampleActions',
       problemId: problem.id,
-      sampleId: sample.id,
+      sampleId: sample.index,
       sampleStatus: status
     };
   }));

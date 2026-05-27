@@ -393,6 +393,7 @@ function createSampleReport(
   const sampleSourceType = inferSampleSourceType(workspaceFolder, sample);
   return {
     id: sample.id,
+    index: sample.index,
     name: sample.name,
     status,
     timeMs,
@@ -445,7 +446,7 @@ function getSampleOutputPaths(
   diffPath: string;
 } {
   if (problemId) {
-    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.id);
+    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.index);
     return {
       outputRel: paths.outputRel,
       outputPath: paths.outputPath,
