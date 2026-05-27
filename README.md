@@ -10,8 +10,10 @@ First-version features:
 - Add one or more C++ programs to a problem and choose a default program
 - Add multiple samples under `.oitest/samples` or `.oitest/problems/<problemId>/samples`
 - Add samples by pasting text or selecting input/output files
+- Batch add samples from a folder by matching input and answer suffixes
 - Delete samples from the OIjudger sidebar
 - Set time and memory limits
+- Automatically set Windows MinGW/g++ stack size from the memory limit
 - Detect or select a local C++ compiler
 - Compile the active C++ file with `g++`
 - Run all configured samples
@@ -40,6 +42,17 @@ Sample storage:
 - Deleting a managed sample removes the OIjudger-owned `.oitest` sample files and generated outputs.
 - Deleting an external sample removes only the OIjudger sample record and generated outputs. The original input and answer files are never deleted.
 
+Batch add samples:
+
+- Run `OIjudger: Batch Add Samples`.
+- Enter the input file suffix. The default is `.in`; `in` is normalized to `.in`.
+- Enter the answer file suffix. The default is `.out`; `ans` is normalized to `.ans`.
+- Select a samples folder.
+- OIjudger scans only the first level of that folder and matches files by `basename + inputSuffix` and `basename + answerSuffix`.
+- For example, `1.in` with `1.out` and `2.in` with `2.out` are added as two samples.
+- Batch-added samples are external samples: OIjudger stores absolute paths only and does not copy or modify the files.
+- Inputs without matching answer files and duplicate sample pairs are skipped and summarized.
+
 Sample viewing:
 
 - Sample input, expected output, and user output open in the native VSCode text editor.
@@ -51,6 +64,16 @@ Timing note: sample time only measures the user executable process. On Windows, 
 
 计时说明：样例时间只统计用户程序进程运行阶段。在 Windows 上，样例运行时间包含进程启动和管道 I/O 开销，因此极小程序也可能显示几十毫秒。
 
+Windows stack size:
+
+- Deep recursive programs on Windows may exit with `0xC00000FD`, which is a stack overflow exception.
+- By default, OIjudger follows the problem memory limit and adds a MinGW/g++ linker flag when compiling on Windows.
+- For `memoryMb = 256`, the generated flag is `-Wl,--stack,268435456`.
+- Use `OIjudger: Set Stack Size` to choose `Follow Memory Limit`, `Custom Stack Size`, or `Disable Auto Stack Size`.
+- The stack flag is generated at compile time and is not repeatedly inserted into `compile.args`.
+- If auto stack size is enabled, an existing `-Wl,--stack,...` argument is replaced by the current setting. If auto stack size is disabled, OIjudger does not add a stack flag.
+- This mainly targets Windows + MinGW/g++. Linux/macOS judging environments usually control stack through the runner or system limits, and avoiding very deep recursion is still the safest algorithmic choice.
+
 Commands:
 
 - `OIjudger: Init Problem`
@@ -58,6 +81,7 @@ Commands:
 - `OIjudger: Run All Samples`
 - `OIjudger: Set Time Limit`
 - `OIjudger: Set Memory Limit`
+- `OIjudger: Set Stack Size`
 - `OIjudger: Open Last Report`
 - `OIjudger: Clear Outputs`
 

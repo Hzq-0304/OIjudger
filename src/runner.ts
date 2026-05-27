@@ -19,6 +19,10 @@ export function runProcess(
     const stderrChunks: Buffer[] = [];
     let timedOut = false;
     let timeoutTimeMs: number | undefined;
+    let settled = false;
+    let stdinError: string | undefined;
+    let stdoutError: string | undefined;
+    let stderrError: string | undefined;
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -28,11 +32,28 @@ export function runProcess(
 
     child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    child.stdout.on('error', (error) => {
+      stdoutError = formatError(error);
+    });
+    child.stderr.on('error', (error) => {
+      stderrError = formatError(error);
+    });
     child.on('error', (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       clearTimeout(timer);
       reject(error);
     });
+    child.stdin.on('error', (error) => {
+      stdinError = formatError(error);
+    });
     child.on('close', (code, signal) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       clearTimeout(timer);
       const timeMs = timedOut && timeoutTimeMs !== undefined ? timeoutTimeMs : elapsedMs(startedAt);
       resolve({
@@ -41,15 +62,27 @@ export function runProcess(
         code,
         signal,
         timedOut,
+        killedByTimeout: timedOut,
+        stdinError,
+        stdoutError,
+        stderrError,
         timeMs,
         elapsedMs: Math.round(timeMs)
       });
     });
 
-    child.stdin.end(input);
+    try {
+      child.stdin.end(input);
+    } catch (error) {
+      stdinError = formatError(error);
+    }
   });
 }
 
 function elapsedMs(startedAt: bigint): number {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

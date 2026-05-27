@@ -7,6 +7,7 @@ import {
   getConfigPath,
   getOITestDir,
   readConfig,
+  normalizeStackConfig,
   resolveWorkspacePath,
   setCompilerCommand,
   toPosixPath
@@ -196,6 +197,49 @@ export async function addExternalProblemSample(
   return sample;
 }
 
+export async function batchAddExternalProblemSamples(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  pairs: Array<{ inputPath: string; answerPath: string }>
+): Promise<{ added: SampleConfig[]; duplicates: Array<{ inputPath: string; answerPath: string }> } | undefined> {
+  const problems = await ensureProblemsConfig(workspaceFolder);
+  const problem = findProblem(problems, problemId);
+  if (!problem) {
+    return undefined;
+  }
+
+  await ensureProblemFolders(workspaceFolder, problem.id);
+  const added: SampleConfig[] = [];
+  const duplicates: Array<{ inputPath: string; answerPath: string }> = [];
+
+  for (const pair of pairs) {
+    const inputPath = path.resolve(pair.inputPath);
+    const answerPath = path.resolve(pair.answerPath);
+    const duplicate = problem.samples.some((sample) => sample.input === inputPath && sample.answer === answerPath);
+    if (duplicate) {
+      duplicates.push({ inputPath, answerPath });
+      continue;
+    }
+
+    const id = nextSampleId(problem);
+    const sample: SampleConfig = {
+      id,
+      name: `Sample ${id}`,
+      input: inputPath,
+      answer: answerPath,
+      actualOutput: getProblemSampleOutputPaths(workspaceFolder, problem.id, id).outputRel,
+      sourceType: 'external'
+    };
+    problem.samples.push(sample);
+    added.push(sample);
+  }
+
+  if (added.length > 0) {
+    await writeProblemsConfig(workspaceFolder, problems);
+  }
+  return { added, duplicates };
+}
+
 export async function updateProblemLimits(
   workspaceFolder: vscode.WorkspaceFolder,
   problemId: string,
@@ -203,6 +247,16 @@ export async function updateProblemLimits(
 ): Promise<ProblemConfig | undefined> {
   return updateProblem(workspaceFolder, problemId, (problem) => {
     problem.limits = { ...problem.limits, ...limits };
+  });
+}
+
+export async function updateProblemStack(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  stack: ProblemConfig['stack']
+): Promise<ProblemConfig | undefined> {
+  return updateProblem(workspaceFolder, problemId, (problem) => {
+    problem.stack = normalizeStackConfig(stack);
   });
 }
 
@@ -405,6 +459,7 @@ function normalizeProblem(workspaceFolder: vscode.WorkspaceFolder, problem: Prob
       ...defaults.limits,
       ...problem.limits
     },
+    stack: normalizeStackConfig(problem.stack),
     samples: (problem.samples ?? []).map((sample, index) => normalizeProblemSample(workspaceFolder, sample, id, index + 1)),
     standard: problem.standard ?? getStandardFromArgs((problem.compiler ?? defaults.compiler).args),
     source: problem.source,

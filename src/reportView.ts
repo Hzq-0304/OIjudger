@@ -162,6 +162,7 @@ function renderReportBody(
       <div><span>${escapeHtml(t('total'))}</span><strong>${formatDuration(report.totalTimeMs)}</strong></div>
       <div><span>${escapeHtml(t('timeLimit'))}</span><strong>${report.timeLimitMs} ms</strong></div>
       <div><span>${escapeHtml(t('memoryLimit'))}</span><strong>${report.memoryLimitMb} MB</strong></div>
+      <div><span>${escapeHtml(t('stack'))}</span><strong>${escapeHtml(formatStack(report))}</strong></div>
       <div><span>${escapeHtml(t('generated'))}</span><strong>${escapeHtml(new Date(report.generatedAt).toLocaleString())}</strong></div>
     </section>
     <section>
@@ -174,6 +175,14 @@ function renderReportBody(
         ${report.samples.map((sample) => renderSampleCard(workspaceFolder, sample, problemId)).join('')}
       </div>
     </section>`;
+}
+
+function formatStack(report: JudgeReport): string {
+  const stack = report.compile?.stack;
+  if (!stack || !stack.enabled) {
+    return t('stackDisabled');
+  }
+  return stack.sizeMb ? `${stack.sizeMb} MB` : '';
 }
 
 function basename(filePath: string): string {
@@ -234,6 +243,7 @@ function createPanel(context: vscode.ExtensionContext, title: string, problemId?
       input: 'oijudger.openSampleInput',
       expected: 'oijudger.openSampleAnswer',
       output: 'oijudger.openSampleUserOutput',
+      stderr: 'oijudger.openSampleStderr',
       diff: 'oijudger.openSampleDiff',
       delete: 'oijudger.deleteSample'
     };
@@ -274,6 +284,7 @@ function renderActionButtons(sampleId: number, problemId: string | undefined, st
     <button data-command="input" data-sample="${sampleId}"${disabled}>${escapeHtml(t('input'))}</button>
     <button data-command="expected" data-sample="${sampleId}"${disabled}>${escapeHtml(t('expectedOutput'))}</button>
     <button data-command="output" data-sample="${sampleId}"${disabled}>${escapeHtml(t('userOutput'))}</button>
+    <button data-command="stderr" data-sample="${sampleId}"${disabled}>${escapeHtml(t('openStderr'))}</button>
     <button data-command="diff" data-sample="${sampleId}"${diffDisabled}>${escapeHtml(t('openDiff'))}</button>
     <button data-command="delete" data-sample="${sampleId}"${disabled}>${escapeHtml(t('delete'))}</button>
   </div>`;

@@ -16,6 +16,7 @@
     "onCommand:oijudger.runAllSamples",
     "onCommand:oijudger.setTimeLimit",
     "onCommand:oijudger.setMemoryLimit",
+    "onCommand:oijudger.setStackSize",
     "onCommand:oijudger.selectCompiler",
     "onCommand:oijudger.openLastReport",
     "onCommand:oijudger.openResultPanel",
@@ -28,10 +29,12 @@
     "onCommand:oijudger.importLegacyProblem",
     "onCommand:oijudger.addProblemSample",
     "onCommand:oijudger.addProblemSampleFromFiles",
+    "onCommand:oijudger.batchAddSamples",
     "onCommand:oijudger.runProblemSamples",
     "onCommand:oijudger.runSamplesWithProgram",
     "onCommand:oijudger.setProblemTimeLimit",
     "onCommand:oijudger.setProblemMemoryLimit",
+    "onCommand:oijudger.setProblemStackSize",
     "onCommand:oijudger.setProblemStandard",
     "onCommand:oijudger.selectProblemCompiler",
     "onCommand:oijudger.bindStatement",
@@ -45,6 +48,7 @@
     "onCommand:oijudger.openSampleAnswer",
     "onCommand:oijudger.openSampleOutput",
     "onCommand:oijudger.openSampleUserOutput",
+    "onCommand:oijudger.openSampleStderr",
     "onCommand:oijudger.openSampleDiff",
     "onCommand:oijudger.deleteSample",
     "onView:oijudger.samplesView"
@@ -76,6 +80,11 @@
         "command": "oijudger.setMemoryLimit",
         "title": "OIjudger: Set Memory Limit",
         "icon": "$(server)"
+      },
+      {
+        "command": "oijudger.setStackSize",
+        "title": "OIjudger: 设置栈空间/Set Stack Size",
+        "icon": "$(layers)"
       },
       {
         "command": "oijudger.selectCompiler",
@@ -138,6 +147,11 @@
         "icon": "$(file-add)"
       },
       {
+        "command": "oijudger.batchAddSamples",
+        "title": "OIjudger: 批量添加样例/Batch Add Samples",
+        "icon": "$(folder-opened)"
+      },
+      {
         "command": "oijudger.runProblemSamples",
         "title": "OIjudger: Run Problem Samples",
         "icon": "$(run-all)"
@@ -156,6 +170,11 @@
         "command": "oijudger.setProblemMemoryLimit",
         "title": "OIjudger: Set Problem Memory Limit",
         "icon": "$(server)"
+      },
+      {
+        "command": "oijudger.setProblemStackSize",
+        "title": "OIjudger: Set Problem Stack Size",
+        "icon": "$(layers)"
       },
       {
         "command": "oijudger.setProblemStandard",
@@ -221,6 +240,11 @@
         "command": "oijudger.openSampleUserOutput",
         "title": "OIjudger: Open User Output",
         "icon": "$(output)"
+      },
+      {
+        "command": "oijudger.openSampleStderr",
+        "title": "OIjudger: Open Stderr",
+        "icon": "$(warning)"
       },
       {
         "command": "oijudger.openSampleDiff",
@@ -325,6 +349,11 @@
           "group": "2_program"
         },
         {
+          "command": "oijudger.batchAddSamples",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "2_samples"
+        },
+        {
           "command": "oijudger.runSamplesWithProgram",
           "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
           "group": "3_run"
@@ -333,6 +362,11 @@
           "command": "oijudger.runProblemSamples",
           "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
           "group": "3_run"
+        },
+        {
+          "command": "oijudger.setStackSize",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "4_limits"
         },
         {
           "command": "oijudger.openSampleInput",
@@ -350,9 +384,14 @@
           "group": "inline@3"
         },
         {
+          "command": "oijudger.openSampleStderr",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa)",
+          "group": "inline@4"
+        },
+        {
           "command": "oijudger.openSampleDiff",
           "when": "view == oijudger.samplesView && viewItem == sampleWa",
-          "group": "inline@4"
+          "group": "inline@5"
         },
         {
           "command": "oijudger.deleteSample",
@@ -391,6 +430,10 @@
           "when": "false"
         },
         {
+          "command": "oijudger.setProblemStackSize",
+          "when": "false"
+        },
+        {
           "command": "oijudger.setProblemStandard",
           "when": "false"
         },
@@ -420,6 +463,10 @@
         },
         {
           "command": "oijudger.openSampleUserOutput",
+          "when": "false"
+        },
+        {
+          "command": "oijudger.openSampleStderr",
           "when": "false"
         },
         {

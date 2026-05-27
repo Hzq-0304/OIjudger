@@ -211,7 +211,8 @@ function createProblemChildren(workspaceFolder: vscode.WorkspaceFolder, problem:
 function createLimitNodes(problem: ProblemConfig): TreeNode[] {
   return [
     actionNode(`${t('time')}: ${problem.limits.timeMs} ms`, 'oijudger.setProblemTimeLimit', 'watch', problem.id),
-    actionNode(`${t('memory')}: ${problem.limits.memoryMb} MB`, 'oijudger.setProblemMemoryLimit', 'server', problem.id)
+    actionNode(`${t('memory')}: ${problem.limits.memoryMb} MB`, 'oijudger.setProblemMemoryLimit', 'server', problem.id),
+    actionNode(`${t('stack')}: ${formatStackLabel(problem)}`, 'oijudger.setStackSize', 'layers', problem.id)
   ];
 }
 
@@ -309,7 +310,8 @@ async function createSampleNodes(
       tooltip: [
         `${t('sampleInput')}: ${fileStatus.inputPath}`,
         `${t('expectedOutput')}: ${fileStatus.answerPath}`,
-        `${t('source')}: ${t(sourceType === 'external' ? 'externalSample' : 'managedSample')}${missingDetail}`
+        `${t('source')}: ${t(sourceType === 'external' ? 'externalSample' : 'managedSample')}${missingDetail}`,
+        ...createRuntimeTooltipLines(sampleReport)
       ].join('\n'),
       icon: status === 'Missing'
         ? new vscode.ThemeIcon(statusIcon(status), new vscode.ThemeColor('errorForeground'))
@@ -321,6 +323,44 @@ async function createSampleNodes(
       sampleStatus: status
     };
   }));
+}
+
+function createRuntimeTooltipLines(report: SampleReport | undefined): string[] {
+  if (!report || report.status !== 'RE') {
+    return [];
+  }
+
+  const lines = ['', `${statusLabel('RE')}:`];
+  if (report.message) {
+    lines.push(report.message);
+  }
+  if (report.exitCode !== undefined) {
+    lines.push(`Exit code: ${formatExitCode(report.exitCode)}`);
+  }
+  if (report.signal !== undefined && report.signal !== null) {
+    lines.push(`Signal: ${report.signal}`);
+  }
+  if (report.stdinError) {
+    lines.push(`stdinError: ${report.stdinError}`);
+  }
+  if (report.stdoutError) {
+    lines.push(`stdoutError: ${report.stdoutError}`);
+  }
+  if (report.stderrError) {
+    lines.push(`stderrError: ${report.stderrError}`);
+  }
+  if (report.stderrPreview !== undefined) {
+    lines.push(report.stderrPreview.trim() ? `stderr: ${report.stderrPreview}` : 'stderr is empty.');
+  }
+  if (
+    report.exitCode === undefined &&
+    report.signal === undefined &&
+    !report.spawnError &&
+    !report.runnerError
+  ) {
+    lines.push('Runtime Error: missing diagnostic information. This is an OIjudger internal issue. See Output Channel.');
+  }
+  return lines;
 }
 
 function createSampleActionNodes(
@@ -339,6 +379,7 @@ function createSampleActionNodes(
 
   if (status !== 'Missing') {
     nodes.push(sampleActionNode(t('openUserOutput'), 'oijudger.openSampleUserOutput', 'output', problemId, sampleId));
+    nodes.push(sampleActionNode(t('openStderr'), 'oijudger.openSampleStderr', 'warning', problemId, sampleId));
   }
 
   if (status === 'WA') {
@@ -359,8 +400,10 @@ function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
     actionNode(t('runWithProgram'), 'oijudger.runSamplesWithProgram', 'run', problem.id),
     actionNode(t('addSample'), 'oijudger.addProblemSample', 'add', problem.id),
     actionNode(t('addSampleFromFiles'), 'oijudger.addProblemSampleFromFiles', 'file-add', problem.id),
+    actionNode(t('batchAddSamples'), 'oijudger.batchAddSamples', 'folder-opened', problem.id),
     actionNode(t('setTimeLimit'), 'oijudger.setProblemTimeLimit', 'watch', problem.id),
     actionNode(t('setMemoryLimit'), 'oijudger.setProblemMemoryLimit', 'server', problem.id),
+    actionNode(t('setStackSize'), 'oijudger.setStackSize', 'layers', problem.id),
     actionNode(t('setCppStandard'), 'oijudger.setProblemStandard', 'settings', problem.id),
     actionNode(t('selectCompiler'), 'oijudger.selectProblemCompiler', 'settings-gear', problem.id),
     actionNode(t('openResultPanel'), 'oijudger.openProblemResultPanel', 'layout-panel', problem.id)
@@ -444,8 +487,27 @@ function formatElapsed(report: SampleReport): string {
   return `${formatMs(timeMs)}ms`;
 }
 
+function formatStackLabel(problem: ProblemConfig): string {
+  const stack = problem.stack ?? { auto: true, sizeMb: null };
+  if (!stack.auto) {
+    return t('stackDisabled');
+  }
+  if (stack.sizeMb) {
+    return `${stack.sizeMb} MB`;
+  }
+  return `${t('stackFollowMemory')} ${problem.limits.memoryMb} MB`;
+}
+
 function formatMs(value: number): number {
   return Math.round(value);
+}
+
+function formatExitCode(code: number | null): string {
+  if (code === null) {
+    return 'unknown';
+  }
+  const unsigned = code >>> 0;
+  return `${code} (0x${unsigned.toString(16).toUpperCase().padStart(8, '0')})`;
 }
 
 function statusIcon(status: SampleStatus | 'Not Run'): string {

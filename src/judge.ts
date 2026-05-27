@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { promises as fs } from 'fs';
 import { compileSource } from './compiler';
 import { isOutputAccepted } from './comparator';
@@ -12,7 +13,9 @@ import {
   inferSampleSourceType,
   resolveSamplePath
 } from './sampleFiles';
-import { JudgeReport, OITestConfig, ProcessResult, SampleConfig, SampleReport } from './types';
+import { CompileStackReport, JudgeReport, OITestConfig, ProcessResult, SampleConfig, SampleReport } from './types';
+
+type RunClassification = 'TLE' | 'RE' | undefined;
 
 export async function runAllSamples(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -36,8 +39,19 @@ export async function runAllSamples(
 
   const samples: SampleReport[] = [];
   const problemId = (config as { id?: string }).id;
+  const runCwd = path.dirname(sourcePath);
   for (const sample of config.samples) {
-    samples.push(await judgeSample(workspaceFolder, compile.executablePath, sample, config.limits.timeMs, output, problemId));
+    samples.push(await judgeSample(
+      workspaceFolder,
+      sourcePath,
+      compile.executablePath,
+      runCwd,
+      sample,
+      config.limits.timeMs,
+      output,
+      problemId,
+      compile.stack
+    ));
   }
 
   const accepted = samples.filter((sample) => sample.status === 'AC').length;
@@ -49,7 +63,8 @@ export async function runAllSamples(
     sourceName: sourcePath.replace(/^.*[\\/]/u, ''),
     compile: {
       status: compile.status,
-      timeMs: compile.timeMs
+      timeMs: compile.timeMs,
+      stack: compile.stack
     },
     totalTimeMs,
     timeLimitMs: config.limits.timeMs,
@@ -68,7 +83,7 @@ export async function runAllSamples(
   output.appendLine('');
   output.appendLine(`Summary: ${accepted}/${samples.length} accepted`);
   output.appendLine(`Total judge time: ${formatMs(totalTimeMs)} ms`);
-  output.appendLine('Report: .oitest/outputs/report.json');
+  output.appendLine(`Report: ${problemId ? `.oitest/problems/${problemId}/outputs/report.json` : '.oitest/outputs/report.json'}`);
   if (samples.some((sample) => sample.status === 'Missing')) {
     vscode.window.showWarningMessage(t('someSamplesMissing'));
   }
@@ -86,11 +101,14 @@ export async function runAllSamples(
 
 async function judgeSample(
   workspaceFolder: vscode.WorkspaceFolder,
+  sourcePath: string,
   executablePath: string,
+  cwd: string,
   sample: SampleConfig,
   timeLimitMs: number,
   output: vscode.OutputChannel,
-  problemId?: string
+  problemId?: string,
+  compileStack?: CompileStackReport
 ): Promise<SampleReport> {
   const fileStatus = await getSampleFileStatus(workspaceFolder, sample);
   const outputPaths = getSampleOutputPaths(workspaceFolder, sample, problemId);
@@ -107,6 +125,12 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
+      {
+        sourcePath,
+        exePath: executablePath,
+        cwd,
+        killedByTimeout: false
+      },
       'Sample input or expected output file is missing.'
     );
   }
@@ -128,18 +152,26 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
+      {
+        sourcePath,
+        exePath: executablePath,
+        cwd,
+        killedByTimeout: false,
+        spawnError: String(error)
+      },
       `Failed to read sample files: ${String(error)}`
     );
   }
 
   let result: ProcessResult;
   try {
-    result = await runProcess(executablePath, [], input, workspaceFolder.uri.fsPath, timeLimitMs);
+    result = await runProcess(executablePath, [], input, cwd, timeLimitMs);
   } catch (error) {
+    const runnerError = formatUnknownError(error);
     await saveTextOutput(outputPaths.outputPath, '');
-    await saveTextOutput(outputPaths.stderrPath, String(error));
+    await saveTextOutput(outputPaths.stderrPath, runnerError);
     output.appendLine(`[ERR] ${sample.name}`);
-    output.appendLine(`  failed to start executable: ${String(error)}`);
+    output.appendLine(`  failed to start executable: ${runnerError}`);
     output.appendLine(`  actual output: ${outputPaths.outputRel}`);
     return createSampleReport(
       workspaceFolder,
@@ -150,18 +182,50 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
-      `Failed to start executable: ${String(error)}`
+      {
+        sourcePath,
+        source: sourcePath,
+        exePath: executablePath,
+        exe: executablePath,
+        cwd,
+        killedByTimeout: false,
+        spawnError: runnerError,
+        runnerError,
+        stderrPreview: runnerError
+      },
+      `Failed to start executable: ${runnerError}`
     );
   }
 
   await saveTextOutput(outputPaths.outputPath, result.stdout);
   await saveTextOutput(outputPaths.stderrPath, result.stderr);
+  if (result.stdinError) {
+    appendStdinWarning(output, sample.name, result);
+  }
+  const runStatus = classifyRunResult(result);
 
-  if (result.timedOut) {
+  if (runStatus === 'TLE') {
     output.appendLine(`[TLE] ${sample.name} (${formatMs(result.timeMs)} ms)`);
     output.appendLine(`${sample.name} run time: ${formatMs(result.timeMs)} ms`);
     output.appendLine(`${sample.name} compare time: 0 ms`);
     output.appendLine(`  actual output: ${outputPaths.outputRel}`);
+    appendRuntimeDiagnostics(output, sample.name, {
+      sourcePath,
+      exePath: executablePath,
+      cwd,
+      inputPath: fileStatus.inputPath,
+      answerPath: fileStatus.answerPath,
+      outputPath: outputPaths.outputPath,
+      stderrPath: outputPaths.stderrPath,
+      timeMs: result.timeMs,
+      exitCode: result.code,
+      signal: result.signal,
+      killedByTimeout: result.killedByTimeout,
+      stdinError: result.stdinError,
+      stdoutError: result.stdoutError,
+      stderrError: result.stderrError,
+      stderr: result.stderr
+    });
     return createSampleReport(
       workspaceFolder,
       sample,
@@ -171,19 +235,43 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
-      'Time limit exceeded.'
+      createRuntimeDiagnostics(sourcePath, executablePath, cwd, result),
+      withStdinMessage('Time limit exceeded.', result)
     );
   }
 
-  if (result.code !== 0) {
-    const message = `Runtime error, exit code ${result.code ?? 'unknown'}.`;
-    output.appendLine(`[RE] ${sample.name} (${formatMs(result.timeMs)} ms, exit code ${result.code ?? 'unknown'})`);
+  if (runStatus === 'RE') {
+    const message = result.signal
+      ? `Runtime error, signal ${result.signal}.`
+      : `Runtime error, exit code ${formatExitCode(result.code)}.`;
+    const stackHint = getStackOverflowHint(result.code, compileStack);
+    output.appendLine(`[RE] ${sample.name} (${formatMs(result.timeMs)} ms, exit code ${formatExitCode(result.code)}, signal ${result.signal ?? 'none'})`);
     output.appendLine(`${sample.name} run time: ${formatMs(result.timeMs)} ms`);
     output.appendLine(`${sample.name} compare time: 0 ms`);
     if (result.stderr.trim()) {
       output.appendLine(indent(result.stderr.trimEnd()));
     }
+    if (stackHint) {
+      output.appendLine(stackHint);
+    }
     output.appendLine(`  actual output: ${outputPaths.outputRel}`);
+    appendRuntimeDiagnostics(output, sample.name, {
+      sourcePath,
+      exePath: executablePath,
+      cwd,
+      inputPath: fileStatus.inputPath,
+      answerPath: fileStatus.answerPath,
+      outputPath: outputPaths.outputPath,
+      stderrPath: outputPaths.stderrPath,
+      timeMs: result.timeMs,
+      exitCode: result.code,
+      signal: result.signal,
+      killedByTimeout: result.killedByTimeout,
+      stdinError: result.stdinError,
+      stdoutError: result.stdoutError,
+      stderrError: result.stderrError,
+      stderr: result.stderr
+    });
     return createSampleReport(
       workspaceFolder,
       sample,
@@ -193,12 +281,38 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
-      message
+      createRuntimeDiagnostics(sourcePath, executablePath, cwd, result),
+      withStdinMessage(stackHint ? `${message} ${stackHint}` : message, result)
     );
   }
 
   const compareStartedAt = process.hrtime.bigint();
-  const accepted = isOutputAccepted(result.stdout, answer);
+  let accepted: boolean;
+  try {
+    accepted = isOutputAccepted(result.stdout, answer);
+  } catch (error) {
+    const compareTimeMs = elapsedMs(compareStartedAt);
+    const compareError = formatUnknownError(error);
+    output.appendLine(`[ERR] ${sample.name} (${formatMs(result.timeMs)} ms)`);
+    output.appendLine(`${sample.name} run time: ${formatMs(result.timeMs)} ms`);
+    output.appendLine(`${sample.name} compare time: ${formatMs(compareTimeMs)} ms`);
+    output.appendLine(`  compare error: ${compareError}`);
+    return createSampleReport(
+      workspaceFolder,
+      sample,
+      'ERR',
+      result.timeMs,
+      compareTimeMs,
+      outputPaths.outputRel,
+      outputPaths.stderrRel,
+      outputPaths.diffRel,
+      {
+        ...createRuntimeDiagnostics(sourcePath, executablePath, cwd, result),
+        compareError
+      },
+      `Failed to compare output: ${compareError}`
+    );
+  }
   const compareTimeMs = elapsedMs(compareStartedAt);
 
   if (!accepted) {
@@ -217,7 +331,8 @@ async function judgeSample(
       outputPaths.outputRel,
       outputPaths.stderrRel,
       outputPaths.diffRel,
-      'Output differs from answer.'
+      createRuntimeDiagnostics(sourcePath, executablePath, cwd, result),
+      withStdinMessage('Output differs from answer.', result)
     );
   }
 
@@ -233,7 +348,11 @@ async function judgeSample(
     compareTimeMs,
     outputPaths.outputRel,
     outputPaths.stderrRel,
-    outputPaths.diffRel
+    outputPaths.diffRel,
+    createRuntimeDiagnostics(sourcePath, executablePath, cwd, result),
+    result.stdinError
+      ? 'stdin write error occurred after process closed, but process exited successfully.'
+      : undefined
   );
 }
 
@@ -251,6 +370,7 @@ function createSampleReport(
   outputRel: string,
   stderrRel: string,
   diffRel: string,
+  diagnostics: Partial<Pick<SampleReport, 'source' | 'exe' | 'sourcePath' | 'exePath' | 'cwd' | 'exitCode' | 'signal' | 'killedByTimeout' | 'stdinError' | 'stdoutError' | 'stderrError' | 'stderrPreview' | 'spawnError' | 'runnerError' | 'compareError'>> = {},
   message?: string
 ): SampleReport {
   const sampleSourceType = inferSampleSourceType(workspaceFolder, sample);
@@ -268,7 +388,30 @@ function createSampleReport(
     stderr: stderrRel,
     diff: diffRel,
     sampleSourceType,
+    ...diagnostics,
     message
+  };
+}
+
+function createRuntimeDiagnostics(
+  sourcePath: string,
+  exePath: string,
+  cwd: string,
+  result: ProcessResult
+): Partial<Pick<SampleReport, 'source' | 'exe' | 'sourcePath' | 'exePath' | 'cwd' | 'exitCode' | 'signal' | 'killedByTimeout' | 'stdinError' | 'stdoutError' | 'stderrError' | 'stderrPreview'>> {
+  return {
+    source: sourcePath,
+    exe: exePath,
+    sourcePath,
+    exePath,
+    cwd,
+    exitCode: result.code,
+    signal: result.signal,
+    killedByTimeout: result.killedByTimeout,
+    stdinError: result.stdinError,
+    stdoutError: result.stdoutError,
+    stderrError: result.stderrError,
+    stderrPreview: firstLines(result.stderr, 12)
   };
 }
 
@@ -318,12 +461,133 @@ function createDiffSummary(answer: string, actual: string): string {
   ].join('\n');
 }
 
+function appendRuntimeDiagnostics(
+  output: vscode.OutputChannel,
+  sampleName: string,
+  details: {
+    sourcePath: string;
+    exePath: string;
+    cwd: string;
+    inputPath: string;
+    answerPath: string;
+    outputPath: string;
+    stderrPath: string;
+    timeMs: number;
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    killedByTimeout: boolean;
+    stdinError?: string;
+    stdoutError?: string;
+    stderrError?: string;
+    stderr: string;
+  }
+): void {
+  output.appendLine(`Diagnostics for ${sampleName}:`);
+  output.appendLine(`  source: ${details.sourcePath}`);
+  output.appendLine(`  exe: ${details.exePath}`);
+  output.appendLine(`  cwd: ${details.cwd}`);
+  output.appendLine(`  input: ${details.inputPath}`);
+  output.appendLine(`  answer: ${details.answerPath}`);
+  output.appendLine(`  output: ${details.outputPath}`);
+  output.appendLine(`  stderr: ${details.stderrPath}`);
+  output.appendLine(`  timeMs: ${formatMs(details.timeMs)}`);
+  output.appendLine(`  exitCode: ${details.exitCode ?? 'null'}`);
+  output.appendLine(`  signal: ${details.signal ?? 'null'}`);
+  output.appendLine(`  killedByTimeout: ${details.killedByTimeout}`);
+  output.appendLine(`  stdinError: ${details.stdinError ?? 'none'}`);
+  output.appendLine(`  stdoutError: ${details.stdoutError ?? 'none'}`);
+  output.appendLine(`  stderrError: ${details.stderrError ?? 'none'}`);
+  output.appendLine('  stderr preview:');
+  output.appendLine(indent(firstLines(details.stderr, 12) || '(empty)'));
+  if (!details.killedByTimeout && details.exitCode === 0 && details.signal === null) {
+    output.appendLine('  note: exit code is 0, so runtime status should be decided by output comparison.');
+  }
+  if (!details.killedByTimeout && details.exitCode === null && details.signal === null) {
+    output.appendLine('  warning: invalid RE classification would have no exitCode, signal, spawnError, or runnerError.');
+  }
+  output.appendLine('  manual reproduce (PowerShell):');
+  output.appendLine(`    cd ${quotePowerShell(details.cwd)}`);
+  output.appendLine(`    & ${quotePowerShell(details.exePath)} < ${quotePowerShell(details.inputPath)} > ${quotePowerShell(path.join(details.cwd, `manual-useroutput-${slugFilePart(sampleName)}.txt`))} 2> ${quotePowerShell(path.join(details.cwd, `manual-stderr-${slugFilePart(sampleName)}.txt`))}`);
+}
+
+function appendStdinWarning(output: vscode.OutputChannel, sampleName: string, result: ProcessResult): void {
+  output.appendLine(`${sampleName} stdin write error: ${result.stdinError}`);
+  output.appendLine(`Exit code: ${result.code ?? 'null'}`);
+  output.appendLine(
+    'This does not necessarily mean Runtime Error. Final status is based on exit code and output comparison.'
+  );
+  output.appendLine('stdin 写入错误不一定代表运行错误；最终状态应根据退出码和输出比较决定。');
+}
+
+function withStdinMessage(message: string, result: ProcessResult): string {
+  return result.stdinError ? `${message} stdin write error: ${result.stdinError}` : message;
+}
+
+function getStackOverflowHint(exitCode: number | null, stack: CompileStackReport | undefined): string | undefined {
+  if (exitCode === null) {
+    return undefined;
+  }
+  if ((exitCode >>> 0) !== 0xC00000FD) {
+    return undefined;
+  }
+
+  const details = stack?.enabled && stack.sizeMb
+    ? t('stackOverflowCurrentSize', { size: stack.sizeMb })
+    : t('stackOverflowEnableHint');
+  return [
+    t('stackOverflowDetected'),
+    t('stackOverflowCause'),
+    details
+  ].join(' ');
+}
+
+function classifyRunResult(result: ProcessResult): RunClassification {
+  if (result.killedByTimeout || result.timedOut) {
+    return 'TLE';
+  }
+  if (result.code !== null && result.code !== 0) {
+    return 'RE';
+  }
+  if (result.signal !== null) {
+    return 'RE';
+  }
+  return undefined;
+}
+
+function firstLines(value: string, count: number): string {
+  return value
+    .split(/\r?\n/u)
+    .slice(0, count)
+    .join('\n')
+    .trimEnd();
+}
+
+function quotePowerShell(value: string): string {
+  return `"${value.replace(/`/g, '``').replace(/"/g, '`"')}"`;
+}
+
+function slugFilePart(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '') || 'sample';
+}
+
 function elapsedMs(startedAt: bigint): number {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }
 
 function formatMs(value: number): number {
   return Math.round(value);
+}
+
+function formatExitCode(code: number | null): string {
+  if (code === null) {
+    return 'unknown';
+  }
+  const unsigned = code >>> 0;
+  return `${code} (0x${unsigned.toString(16).toUpperCase().padStart(8, '0')})`;
+}
+
+function formatUnknownError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function resolveDirname(filePath: string): string {

@@ -38,7 +38,13 @@ export type OITestConfig = {
     timeMs: number;
     memoryMb: number;
   };
+  stack?: StackConfig;
   samples: SampleConfig[];
+};
+
+export type StackConfig = {
+  auto: boolean;
+  sizeMb?: number | null;
 };
 
 export type ProblemConfig = OITestConfig & {
@@ -62,6 +68,10 @@ export type ProcessResult = {
   code: number | null;
   signal: NodeJS.Signals | null;
   timedOut: boolean;
+  killedByTimeout: boolean;
+  stdinError?: string;
+  stdoutError?: string;
+  stderrError?: string;
   timeMs: number;
   elapsedMs: number;
 };
@@ -69,10 +79,20 @@ export type ProcessResult = {
 export type CompileReport = {
   status: 'OK';
   timeMs: number;
+  stack?: CompileStackReport;
 };
 
 export type CompileResult = CompileReport & {
   executablePath: string;
+};
+
+export type CompileStackReport = {
+  enabled: boolean;
+  sizeMb?: number;
+  sizeBytes?: number;
+  flag?: string;
+  compilerFamily?: string;
+  unsupported?: boolean;
 };
 
 export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Skipped' | 'Missing';
@@ -91,6 +111,21 @@ export type SampleReport = {
   stderr?: string;
   diff?: string;
   sampleSourceType?: SampleSourceType;
+  source?: string;
+  exe?: string;
+  sourcePath?: string;
+  exePath?: string;
+  cwd?: string;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+  killedByTimeout?: boolean;
+  stdinError?: string;
+  stdoutError?: string;
+  stderrError?: string;
+  stderrPreview?: string;
+  spawnError?: string;
+  runnerError?: string;
+  compareError?: string;
   message?: string;
 };
 

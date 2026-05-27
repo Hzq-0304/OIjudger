@@ -112,6 +112,20 @@ export async function findExistingUserOutput(
   return undefined;
 }
 
+export async function findExistingStderrOutput(
+  workspaceFolder: vscode.WorkspaceFolder,
+  sample: SampleConfig,
+  problemId?: string
+): Promise<string | undefined> {
+  const candidates = getStderrOutputCandidates(workspaceFolder, sample, problemId);
+  for (const candidate of candidates) {
+    if (await exists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function getUserOutputCandidates(
   workspaceFolder: vscode.WorkspaceFolder,
   sample: SampleConfig,
@@ -125,6 +139,23 @@ export function getUserOutputCandidates(
   }
   if (sample.actualOutput) {
     candidates.add(resolveSamplePath(workspaceFolder, sample.actualOutput));
+  }
+  return [...candidates];
+}
+
+export function getStderrOutputCandidates(
+  workspaceFolder: vscode.WorkspaceFolder,
+  sample: SampleConfig,
+  problemId?: string
+): string[] {
+  const candidates = new Set<string>();
+  if (problemId) {
+    const paths = getProblemSampleOutputPaths(workspaceFolder, problemId, sample.id);
+    candidates.add(paths.stderrPath);
+    candidates.add(paths.legacyStderrPath);
+  }
+  if (sample.actualOutput) {
+    candidates.add(resolveSamplePath(workspaceFolder, sample.actualOutput).replace(/\.out$/u, '.err'));
   }
   return [...candidates];
 }

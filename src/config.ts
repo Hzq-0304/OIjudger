@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { t } from './i18n';
-import { OITestConfig, SampleConfig } from './types';
+import { OITestConfig, SampleConfig, StackConfig } from './types';
 
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
   const editor = vscode.window.activeTextEditor;
@@ -139,6 +139,12 @@ export async function setMemoryLimit(workspaceFolder: vscode.WorkspaceFolder, me
   await writeConfig(workspaceFolder, config);
 }
 
+export async function setStackConfig(workspaceFolder: vscode.WorkspaceFolder, stack: StackConfig): Promise<void> {
+  const config = await ensureConfig(workspaceFolder);
+  config.stack = stack;
+  await writeConfig(workspaceFolder, config);
+}
+
 export async function clearOutputs(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
   const outputsDir = getOutputsDir(workspaceFolder);
   await fs.rm(outputsDir, { recursive: true, force: true });
@@ -159,6 +165,10 @@ export function createDefaultConfig(): OITestConfig {
     limits: {
       timeMs: 1000,
       memoryMb: 256
+    },
+    stack: {
+      auto: true,
+      sizeMb: null
     },
     samples: []
   };
@@ -229,7 +239,15 @@ function normalizeConfig(config: OITestConfig): OITestConfig {
       ...defaultConfig.limits,
       ...config.limits
     },
+    stack: normalizeStackConfig(config.stack),
     samples: config.samples ?? []
+  };
+}
+
+export function normalizeStackConfig(stack: StackConfig | undefined): StackConfig {
+  return {
+    auto: stack?.auto ?? true,
+    sizeMb: stack?.sizeMb ?? null
   };
 }
 

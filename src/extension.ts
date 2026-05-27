@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { promises as fs } from 'fs';
 import {
   addExternalSample,
   addSample,
@@ -10,6 +11,7 @@ import {
   initProblem,
   isCppFile,
   setMemoryLimit,
+  setStackConfig,
   setTimeLimit,
   validatePositiveInteger
 } from './config';
@@ -25,6 +27,7 @@ import {
 } from './reportView';
 import {
   addProgramToProblem,
+  batchAddExternalProblemSamples,
   addExternalProblemSample,
   addProblemFromSource,
   addProblemSample,
@@ -43,9 +46,10 @@ import {
   unbindProblemStatement,
   updateProblemCompiler,
   updateProblemLimits,
+  updateProblemStack,
   updateProblemStandard
 } from './problems';
-import { findExistingUserOutput, getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
+import { findExistingStderrOutput, findExistingUserOutput, getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
 import { SampleTreeProvider } from './sampleTreeProvider';
 import { ProblemConfig } from './types';
 
@@ -196,6 +200,9 @@ export function activate(context: vscode.ExtensionContext): void {
       sampleTreeProvider.refresh();
       vscode.window.showInformationMessage(t('memoryLimitUpdated'));
     }),
+    vscode.commands.registerCommand('oijudger.setStackSize', async (problemArg?: unknown) => {
+      await setStackSizeCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
     vscode.commands.registerCommand('oijudger.selectCompiler', async () => {
       const workspaceFolder = getWorkspaceFolder();
       if (!workspaceFolder) {
@@ -298,6 +305,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('oijudger.addProblemSampleFromFiles', async (problemArg?: unknown) => {
       await addProblemSampleCommand(readProblemId(problemArg), true, sampleTreeProvider);
     }),
+    vscode.commands.registerCommand('oijudger.batchAddSamples', async (problemArg?: unknown) => {
+      await batchAddSamplesCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
     vscode.commands.registerCommand('oijudger.runProblemSamples', async (problemArg?: unknown) => {
       await runProblemSamplesCommand(readProblemId(problemArg), sampleTreeProvider, false);
     }),
@@ -309,6 +319,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('oijudger.setProblemMemoryLimit', async (problemArg?: unknown) => {
       await setProblemLimitCommand(readProblemId(problemArg), 'memoryMb', sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.setProblemStackSize', async (problemArg?: unknown) => {
+      await setStackSizeCommand(readProblemId(problemArg), sampleTreeProvider);
     }),
     vscode.commands.registerCommand('oijudger.setProblemStandard', async (problemArg?: unknown) => {
       await setProblemStandardCommand(readProblemId(problemArg), sampleTreeProvider);
@@ -359,6 +372,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('oijudger.openSampleUserOutput', async (problemArg?: unknown, sampleArg?: unknown) => {
       await openSampleFileCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), 'output');
+    }),
+    vscode.commands.registerCommand('oijudger.openSampleStderr', async (problemArg?: unknown, sampleArg?: unknown) => {
+      await openSampleFileCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), 'stderr');
     }),
     vscode.commands.registerCommand('oijudger.openSampleDiff', async (problemArg?: unknown, sampleArg?: unknown) => {
       await openSampleDiffCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg));
@@ -507,6 +523,85 @@ async function pickSourceFile(): Promise<vscode.Uri | undefined> {
   return uris?.[0];
 }
 
+async function pickSamplesFolder(): Promise<vscode.Uri | undefined> {
+  const uris = await vscode.window.showOpenDialog({
+    title: t('batchAddSamples'),
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: t('selectSamplesFolder')
+  });
+
+  return uris?.[0];
+}
+
+function normalizeSuffix(value: string): string {
+  const suffix = value.trim();
+  return suffix.startsWith('.') ? suffix : `.${suffix}`;
+}
+
+async function scanSamplePairs(
+  folder: string,
+  inputSuffix: string,
+  answerSuffix: string
+): Promise<{
+  matched: Array<{ inputPath: string; answerPath: string; baseName: string }>;
+  missingAnswers: Array<{ inputPath: string; expectedAnswerPath: string }>;
+}> {
+  const entries = await fs.readdir(folder, { withFileTypes: true });
+  const fileNames = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  const fileSet = new Set(fileNames);
+  const matched: Array<{ inputPath: string; answerPath: string; baseName: string }> = [];
+  const missingAnswers: Array<{ inputPath: string; expectedAnswerPath: string }> = [];
+
+  for (const fileName of fileNames) {
+    if (!fileName.endsWith(inputSuffix)) {
+      continue;
+    }
+    const baseName = fileName.slice(0, -inputSuffix.length);
+    const answerFileName = `${baseName}${answerSuffix}`;
+    const inputPath = path.resolve(folder, fileName);
+    const answerPath = path.resolve(folder, answerFileName);
+    if (fileSet.has(answerFileName)) {
+      matched.push({ inputPath, answerPath, baseName });
+    } else {
+      missingAnswers.push({ inputPath, expectedAnswerPath: answerPath });
+    }
+  }
+
+  matched.sort((a, b) => a.baseName.localeCompare(b.baseName, undefined, { numeric: true, sensitivity: 'base' }));
+  missingAnswers.sort((a, b) =>
+    path.basename(a.inputPath).localeCompare(path.basename(b.inputPath), undefined, { numeric: true, sensitivity: 'base' })
+  );
+  return { matched, missingAnswers };
+}
+
+function writeBatchAddDiagnostics(
+  problemName: string,
+  folder: string,
+  inputSuffix: string,
+  answerSuffix: string,
+  scan: {
+    matched: Array<{ inputPath: string; answerPath: string }>;
+    missingAnswers: Array<{ inputPath: string; expectedAnswerPath: string }>;
+  }
+): void {
+  output.appendLine('');
+  output.appendLine('Batch Add Samples');
+  output.appendLine(`Problem: ${problemName}`);
+  output.appendLine(`Folder: ${folder}`);
+  output.appendLine(`Input suffix: ${inputSuffix}`);
+  output.appendLine(`Answer suffix: ${answerSuffix}`);
+  output.appendLine('Matched:');
+  for (const pair of scan.matched) {
+    output.appendLine(`  ${path.basename(pair.inputPath)} -> ${path.basename(pair.answerPath)}`);
+  }
+  output.appendLine('Skipped missing answer:');
+  for (const skipped of scan.missingAnswers) {
+    output.appendLine(`  ${path.basename(skipped.inputPath)} expected ${path.basename(skipped.expectedAnswerPath)}`);
+  }
+}
+
 async function createProblemCommand(sampleTreeProvider: SampleTreeProvider): Promise<void> {
   const workspaceFolder = getWorkspaceFolder();
   if (!workspaceFolder) {
@@ -534,7 +629,7 @@ async function addProblemSampleCommand(
   fromFiles: boolean,
   sampleTreeProvider: SampleTreeProvider
 ): Promise<void> {
-  const context = await getProblemContext(problemId);
+  const context = await getProblemContext(problemId, true);
   if (!context) {
     return;
   }
@@ -576,6 +671,78 @@ async function addExternalProblemSampleFromPicker(
   }
 
   return addExternalProblemSample(workspaceFolder, problemId, files.inputPath, files.answerPath);
+}
+
+async function batchAddSamplesCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const inputSuffixText = await vscode.window.showInputBox({
+    title: t('batchAddSamples'),
+    prompt: t('enterInputSuffix'),
+    value: '.in',
+    validateInput: (value) => value.trim() ? undefined : t('inputSuffixEmpty')
+  });
+  if (inputSuffixText === undefined) {
+    vscode.window.showInformationMessage(t('batchAddCanceled'));
+    return;
+  }
+
+  const answerSuffixText = await vscode.window.showInputBox({
+    title: t('batchAddSamples'),
+    prompt: t('enterAnswerSuffix'),
+    value: '.out',
+    validateInput: (value) => value.trim() ? undefined : t('answerSuffixEmpty')
+  });
+  if (answerSuffixText === undefined) {
+    vscode.window.showInformationMessage(t('batchAddCanceled'));
+    return;
+  }
+
+  const folderUri = await pickSamplesFolder();
+  if (!folderUri) {
+    vscode.window.showInformationMessage(t('batchAddCanceled'));
+    return;
+  }
+
+  const inputSuffix = normalizeSuffix(inputSuffixText);
+  const answerSuffix = normalizeSuffix(answerSuffixText);
+  const scan = await scanSamplePairs(folderUri.fsPath, inputSuffix, answerSuffix);
+  writeBatchAddDiagnostics(context.problem.name, folderUri.fsPath, inputSuffix, answerSuffix, scan);
+
+  if (scan.matched.length === 0) {
+    vscode.window.showWarningMessage(t('noMatchedSamples'));
+    return;
+  }
+
+  const result = await batchAddExternalProblemSamples(context.workspaceFolder, context.problem.id, scan.matched);
+  if (!result) {
+    vscode.window.showWarningMessage(t('problemNotFound'));
+    return;
+  }
+
+  output.appendLine('Skipped duplicates:');
+  for (const duplicate of result.duplicates) {
+    output.appendLine(`  ${path.basename(duplicate.inputPath)} -> ${path.basename(duplicate.answerPath)}`);
+  }
+
+  const missing = scan.missingAnswers.length;
+  const duplicates = result.duplicates.length;
+  sampleTreeProvider.refresh();
+  if (missing > 0 || duplicates > 0) {
+    vscode.window.showInformationMessage(t('batchAddSamplesSummary', {
+      count: result.added.length,
+      missing,
+      duplicates
+    }));
+  } else {
+    vscode.window.showInformationMessage(t('batchAddSamplesAdded', { count: result.added.length }));
+  }
 }
 
 async function runProblemSamplesCommand(
@@ -702,7 +869,7 @@ async function setProblemLimitCommand(
   field: 'timeMs' | 'memoryMb',
   sampleTreeProvider: SampleTreeProvider
 ): Promise<void> {
-  const context = await getProblemContext(problemId);
+  const context = await getProblemContext(problemId, true);
   if (!context) {
     return;
   }
@@ -722,6 +889,69 @@ async function setProblemLimitCommand(
   });
   sampleTreeProvider.refresh();
   vscode.window.showInformationMessage(field === 'timeMs' ? t('timeLimitUpdated') : t('memoryLimitUpdated'));
+}
+
+async function setStackSizeCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const workspaceFolder = getWorkspaceFolder();
+  if (!workspaceFolder) {
+    return;
+  }
+  const problems = await ensureProblemsConfig(workspaceFolder);
+  const context = problemId || activeProblemId || problems.problems.length > 0
+    ? await getProblemContext(problemId, true)
+    : undefined;
+  if (!context && problems.problems.length > 0) {
+    return;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    [
+      { label: t('stackFollowMemory'), mode: 'follow' as const },
+      { label: t('stackCustom'), mode: 'custom' as const },
+      { label: t('stackDisable'), mode: 'disable' as const }
+    ],
+    {
+      title: t('setStackSize'),
+      placeHolder: t('stack')
+    }
+  );
+  if (!picked) {
+    return;
+  }
+
+  let stack = { auto: true, sizeMb: null as number | null };
+  if (picked.mode === 'custom') {
+    const sizeText = await vscode.window.showInputBox({
+      title: t('setStackSize'),
+      prompt: t('enterStackSizeMb'),
+      value: String(context?.problem.stack?.sizeMb ?? context?.problem.limits.memoryMb ?? 256),
+      validateInput: validatePositiveInteger
+    });
+    if (sizeText === undefined) {
+      return;
+    }
+    stack = { auto: true, sizeMb: Number(sizeText) };
+  } else if (picked.mode === 'disable') {
+    stack = { auto: false, sizeMb: null };
+  }
+
+  if (context) {
+    await updateProblemStack(context.workspaceFolder, context.problem.id, stack);
+  } else {
+    await setStackConfig(workspaceFolder, stack);
+  }
+
+  sampleTreeProvider.refresh();
+  if (!stack.auto) {
+    vscode.window.showInformationMessage(t('autoStackDisabled'));
+  } else if (stack.sizeMb) {
+    vscode.window.showInformationMessage(t('stackSizeSet', { size: stack.sizeMb }));
+  } else {
+    vscode.window.showInformationMessage(t('autoStackEnabled'));
+  }
 }
 
 async function setProblemStandardCommand(
@@ -957,7 +1187,7 @@ async function getProblemContext(problemId: string | undefined, allowActive = fa
 async function openSampleFileCommand(
   problemId: string | undefined,
   sampleId: number | undefined,
-  kind: 'input' | 'answer' | 'output'
+  kind: 'input' | 'answer' | 'output' | 'stderr'
 ): Promise<void> {
   const context = await getSampleContext(problemId, sampleId);
   if (!context) {
@@ -970,10 +1200,12 @@ async function openSampleFileCommand(
       ? fileStatus.inputPath
       : kind === 'answer'
         ? fileStatus.answerPath
-        : await findExistingUserOutput(context.workspaceFolder, context.sample, context.problem.id);
+        : kind === 'stderr'
+          ? await findExistingStderrOutput(context.workspaceFolder, context.sample, context.problem.id)
+          : await findExistingUserOutput(context.workspaceFolder, context.sample, context.problem.id);
 
   if (!filePath) {
-    vscode.window.showWarningMessage(t('userOutputMissing'));
+    vscode.window.showWarningMessage(kind === 'stderr' ? t('stderrMissing') : t('userOutputMissing'));
     return;
   }
 
