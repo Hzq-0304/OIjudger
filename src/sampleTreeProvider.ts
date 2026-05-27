@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { existsSync } from 'fs';
 import { promises as fs } from 'fs';
 import { exists } from './config';
 import { t } from './i18n';
@@ -182,6 +183,7 @@ function createProblemChildren(workspaceFolder: vscode.WorkspaceFolder, problem:
     infoNode(t('defaultProgramLine', { program: getDefaultProblemSource(problem) ? path.basename(getDefaultProblemSource(problem) ?? '') : t('noProgramSet') }), 'file-code'),
     infoNode(t('compilerLine', { compiler: path.basename(problem.compiler.command || 'g++') }), 'terminal'),
     infoNode(t('standardLine', { standard: problem.standard }), 'settings'),
+    createCheckerInfoNode(workspaceFolder, problem),
     {
       kind: 'group',
       label: t('limits'),
@@ -317,6 +319,9 @@ async function createSampleNodes(
         `${t('sampleInput')}: ${fileStatus.inputPath}`,
         `${t('expectedOutput')}: ${fileStatus.answerPath}`,
         `${t('source')}: ${t(sourceType === 'external' ? 'externalSample' : 'managedSample')}${missingDetail}`,
+        ...(sampleReport?.checker?.message ? [`${t('checker')}: ${sampleReport.checker.message}`] : []),
+        ...(sampleReport?.checker?.stdout ? [`${t('checkerOutput')}: ${sampleReport.checker.stdout}`] : []),
+        ...(sampleReport?.checker?.stderr ? [`${t('checkerStderr')}: ${sampleReport.checker.stderr}`] : []),
         ...createRuntimeTooltipLines(sampleReport)
       ].join('\n'),
       icon: status === 'Missing'
@@ -405,12 +410,21 @@ function createSampleActionNodes(
   if (status === 'WA') {
     nodes.push(sampleActionNode(t('openDiff'), 'oijudger.openSampleDiff', 'diff', problemId, sampleId));
   }
+  if (status === 'WA' || status === 'AC' || status === 'Checker Error') {
+    nodes.push(sampleActionNode(t('checkerOutput'), 'oijudger.openCheckerOutput', 'output', problemId, sampleId));
+    nodes.push(sampleActionNode(t('checkerStderr'), 'oijudger.openCheckerStderr', 'warning', problemId, sampleId));
+  }
 
   return nodes;
 }
 
 function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
   return [
+    actionNode(t('setChecker'), 'oijudger.setChecker', 'verified', problem.id),
+    actionNode(t('clearChecker'), 'oijudger.clearChecker', 'clear-all', problem.id),
+    actionNode(t('openChecker'), 'oijudger.openChecker', 'go-to-file', problem.id),
+    actionNode(t('importTestlib'), 'oijudger.importTestlib', 'cloud-download', problem.id),
+    actionNode(t('openTestlib'), 'oijudger.openTestlib', 'book', problem.id),
     actionNode(t('bindStatement'), 'oijudger.bindStatement', 'link', problem.id),
     actionNode(t('openStatement'), 'oijudger.openStatement', 'book', problem.id),
     actionNode(t('unbindStatement'), 'oijudger.unbindStatement', 'debug-disconnect', problem.id),
@@ -428,6 +442,28 @@ function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
     actionNode(t('selectCompiler'), 'oijudger.selectProblemCompiler', 'settings-gear', problem.id),
     actionNode(t('openResultPanel'), 'oijudger.openProblemResultPanel', 'layout-panel', problem.id)
   ];
+}
+
+function createCheckerInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem: ProblemConfig): TreeNode {
+  const checker = problem.checker;
+  if (!checker?.enabled || checker.type === 'none') {
+    return infoNode(`${t('checker')}: ${t('normalCompare')}`, 'check');
+  }
+
+  const checkerPath = checker.source
+    ? resolveProblemReferencePath(workspaceFolder, checker.source)
+    : undefined;
+  const missing = !checkerPath || !existsSync(checkerPath);
+  return {
+    kind: 'info',
+    label: missing
+      ? `${t('checker')}: ${t('statusMissing')}`
+      : `${t('checker')}: testlib ${path.basename(checkerPath)}`,
+    tooltip: checkerPath ?? t('checkerMissing'),
+    icon: missing
+      ? new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'))
+      : new vscode.ThemeIcon('verified')
+  };
 }
 
 function createWorkspaceActionNodes(): TreeNode[] {
@@ -534,6 +570,7 @@ function statusIcon(status: SampleStatus | 'Not Run'): string {
       return 'watch';
     case 'RE':
     case 'CE':
+    case 'Checker Error':
     case 'Skipped':
     case 'ERR':
       return 'warning';
@@ -554,6 +591,8 @@ function statusLabel(status: SampleStatus | 'Not Run'): string {
       return t('statusRE');
     case 'CE':
       return t('statusCE');
+    case 'Checker Error':
+      return t('checkerError');
     case 'MLE':
       return t('statusMLE');
     case 'Skipped':

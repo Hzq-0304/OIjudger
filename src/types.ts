@@ -1,6 +1,8 @@
 import type { RuntimeErrorSummary } from './runtimeErrorExplainer';
 
 export type SampleSourceType = 'managed' | 'external';
+export type CheckerType = 'none' | 'testlib';
+export type TestlibMode = 'auto' | 'managed' | 'custom';
 
 export type ProblemStatementType = 'markdown' | 'pdf' | 'text' | 'unknown';
 
@@ -27,6 +29,18 @@ export type SampleConfig = {
   sourceType?: SampleSourceType;
 };
 
+export type CheckerConfig = {
+  enabled: boolean;
+  type: CheckerType;
+  source?: string;
+  exe?: string;
+  timeLimitMs?: number;
+  testlib?: {
+    mode: TestlibMode;
+    path?: string | null;
+  };
+};
+
 export type OITestConfig = {
   version: 1;
   compile?: {
@@ -42,6 +56,7 @@ export type OITestConfig = {
     memoryMb: number;
   };
   stack?: StackConfig;
+  checker?: CheckerConfig;
   samples: SampleConfig[];
 };
 
@@ -98,7 +113,21 @@ export type CompileStackReport = {
   unsupported?: boolean;
 };
 
-export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Skipped' | 'Missing';
+export type SampleStatus = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'ERR' | 'Checker Error' | 'Skipped' | 'Missing';
+
+export type CheckerSampleReport = {
+  enabled: boolean;
+  type: CheckerType;
+  source?: string;
+  exe?: string;
+  testlibPath?: string;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+  timeMs?: number;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
+};
 
 export type SampleReport = {
   id: string;
@@ -131,6 +160,8 @@ export type SampleReport = {
   runnerError?: string;
   compareError?: string;
   runtimeError?: RuntimeErrorSummary;
+  score?: number;
+  checker?: CheckerSampleReport;
   message?: string;
 };
 
@@ -143,8 +174,14 @@ export type JudgeReport = {
   totalTimeMs?: number;
   timeLimitMs: number;
   memoryLimitMb: number;
+  judgeMode?: 'normal' | 'testlib';
+  checker?: CheckerConfig;
   summary: {
     accepted: number;
+    total: number;
+  };
+  score?: {
+    earned: number;
     total: number;
   };
   results?: SampleReport[];

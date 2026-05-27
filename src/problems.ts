@@ -10,6 +10,7 @@ import {
   createSampleInternalId,
   getNextSampleIndex,
   getSampleDisplayNameFromInput,
+  normalizeCheckerConfig,
   normalizeStackConfig,
   normalizeSampleInternalId,
   resolveSampleIndex,
@@ -294,6 +295,16 @@ export async function updateProblemCompiler(
   });
 }
 
+export async function updateProblemChecker(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  checker: ProblemConfig['checker']
+): Promise<ProblemConfig | undefined> {
+  return updateProblem(workspaceFolder, problemId, (problem) => {
+    problem.checker = normalizeCheckerConfig(checker);
+  });
+}
+
 export async function getProblem(
   workspaceFolder: vscode.WorkspaceFolder,
   problemId: string
@@ -471,6 +482,7 @@ function normalizeProblem(workspaceFolder: vscode.WorkspaceFolder, problem: Prob
       ...problem.limits
     },
     stack: normalizeStackConfig(problem.stack),
+    checker: normalizeCheckerConfig(problem.checker),
     samples: (problem.samples ?? []).map((sample, index) => normalizeProblemSample(workspaceFolder, sample, id, index + 1)),
     standard: problem.standard ?? getStandardFromArgs((problem.compiler ?? defaults.compiler).args),
     source: problem.source,

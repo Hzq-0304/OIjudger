@@ -51,7 +51,14 @@
     "onCommand:oijudger.openSampleStderr",
     "onCommand:oijudger.openSampleDiff",
     "onCommand:oijudger.deleteSample",
-    "onView:oijudger.samplesView"
+    "onView:oijudger.samplesView",
+    "onCommand:oijudger.setChecker",
+    "onCommand:oijudger.clearChecker",
+    "onCommand:oijudger.openChecker",
+    "onCommand:oijudger.importTestlib",
+    "onCommand:oijudger.openTestlib",
+    "onCommand:oijudger.openCheckerOutput",
+    "onCommand:oijudger.openCheckerStderr"
   ],
   "main": "./out/extension.js",
   "repository": {
@@ -260,6 +267,41 @@
         "command": "oijudger.deleteSample",
         "title": "OIjudger: 删除样例/Delete Sample",
         "icon": "$(trash)"
+      },
+      {
+        "command": "oijudger.setChecker",
+        "title": "OIjudger: 设置 Checker/Set Checker",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "oijudger.clearChecker",
+        "title": "OIjudger: 清除 Checker/Clear Checker",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "oijudger.openChecker",
+        "title": "OIjudger: 打开 Checker/Open Checker",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "oijudger.importTestlib",
+        "title": "OIjudger: 导入 testlib.h/Import testlib.h",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "oijudger.openTestlib",
+        "title": "OIjudger: 打开 testlib.h/Open testlib.h",
+        "icon": "$(book)"
+      },
+      {
+        "command": "oijudger.openCheckerOutput",
+        "title": "OIjudger: Open Checker Output",
+        "icon": "$(output)"
+      },
+      {
+        "command": "oijudger.openCheckerStderr",
+        "title": "OIjudger: Open Checker Stderr",
+        "icon": "$(warning)"
       }
     ],
     "viewsContainers": {
@@ -407,6 +449,41 @@
           "command": "oijudger.deleteSample",
           "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa || viewItem == sampleMissing)",
           "group": "9_delete"
+        },
+        {
+          "command": "oijudger.setChecker",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "3_checker@1"
+        },
+        {
+          "command": "oijudger.clearChecker",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "3_checker@2"
+        },
+        {
+          "command": "oijudger.openChecker",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "3_checker@3"
+        },
+        {
+          "command": "oijudger.importTestlib",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "3_checker@4"
+        },
+        {
+          "command": "oijudger.openTestlib",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "group": "3_checker@5"
+        },
+        {
+          "command": "oijudger.openCheckerOutput",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa)",
+          "group": "inline@6"
+        },
+        {
+          "command": "oijudger.openCheckerStderr",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa)",
+          "group": "inline@7"
         }
       ],
       "commandPalette": [
@@ -476,6 +553,14 @@
         },
         {
           "command": "oijudger.openSampleDiff",
+          "when": "false"
+        },
+        {
+          "command": "oijudger.openCheckerOutput",
+          "when": "false"
+        },
+        {
+          "command": "oijudger.openCheckerStderr",
           "when": "false"
         }
       ]

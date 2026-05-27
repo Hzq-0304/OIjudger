@@ -44,6 +44,7 @@ import {
   saveProblemReport,
   setProblemDefaultSource,
   unbindProblemStatement,
+  updateProblemChecker,
   updateProblemCompiler,
   updateProblemLimits,
   updateProblemStack,
@@ -51,6 +52,7 @@ import {
 } from './problems';
 import { findExistingStderrOutput, findExistingUserOutput, getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
 import { SampleTreeProvider } from './sampleTreeProvider';
+import { importTestlibToManaged, resolveTestlibForChecker } from './testlibResolver';
 import { ProblemConfig } from './types';
 
 const output = vscode.window.createOutputChannel('OIjudger');
@@ -323,6 +325,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('oijudger.setProblemStackSize', async (problemArg?: unknown) => {
       await setStackSizeCommand(readProblemId(problemArg), sampleTreeProvider);
     }),
+    vscode.commands.registerCommand('oijudger.setChecker', async (problemArg?: unknown) => {
+      await setCheckerCommand(context, readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.clearChecker', async (problemArg?: unknown) => {
+      await clearCheckerCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.openChecker', async (problemArg?: unknown) => {
+      await openCheckerCommand(readProblemId(problemArg));
+    }),
+    vscode.commands.registerCommand('oijudger.importTestlib', async () => {
+      await importTestlibCommand(context);
+      sampleTreeProvider.refresh();
+    }),
+    vscode.commands.registerCommand('oijudger.openTestlib', async (problemArg?: unknown) => {
+      await openTestlibCommand(readProblemId(problemArg));
+    }),
     vscode.commands.registerCommand('oijudger.setProblemStandard', async (problemArg?: unknown) => {
       await setProblemStandardCommand(readProblemId(problemArg), sampleTreeProvider);
     }),
@@ -378,6 +396,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('oijudger.openSampleDiff', async (problemArg?: unknown, sampleArg?: unknown) => {
       await openSampleDiffCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg));
+    }),
+    vscode.commands.registerCommand('oijudger.openCheckerOutput', async (problemArg?: unknown, sampleArg?: unknown) => {
+      await openCheckerArtifactCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), 'stdout');
+    }),
+    vscode.commands.registerCommand('oijudger.openCheckerStderr', async (problemArg?: unknown, sampleArg?: unknown) => {
+      await openCheckerArtifactCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), 'stderr');
     }),
     vscode.commands.registerCommand('oijudger.deleteSample', async (problemArg?: unknown, sampleArg?: unknown) => {
       await deleteSampleCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), sampleTreeProvider);
@@ -954,6 +978,251 @@ async function setStackSizeCommand(
   }
 }
 
+async function setCheckerCommand(
+  extensionContext: vscode.ExtensionContext,
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    [
+      { label: t('checkerNone'), type: 'none' as const },
+      { label: t('checkerTestlib'), type: 'testlib' as const }
+    ],
+    {
+      title: t('setChecker'),
+      placeHolder: t('judgeMode')
+    }
+  );
+  if (!picked) {
+    return;
+  }
+
+  if (picked.type === 'none') {
+    await updateProblemChecker(context.workspaceFolder, context.problem.id, { enabled: false, type: 'none' });
+    sampleTreeProvider.refresh();
+    vscode.window.showInformationMessage(t('checkerCleared'));
+    return;
+  }
+
+  const checkerUri = await pickCheckerFile();
+  if (!checkerUri) {
+    return;
+  }
+
+  const checker = {
+    enabled: true,
+    type: 'testlib' as const,
+    source: checkerUri.fsPath,
+    exe: path.join('.oitest', 'problems', context.problem.id, 'checker', process.platform === 'win32' ? 'checker.exe' : 'checker'),
+    timeLimitMs: 5000,
+    testlib: {
+      mode: 'auto' as const,
+      path: null
+    }
+  };
+  await updateProblemChecker(context.workspaceFolder, context.problem.id, checker);
+  const testlib = await resolveTestlibForChecker(context.workspaceFolder, checkerUri.fsPath, checker);
+  let testlibFound = testlib.found;
+  if (!testlib.found && await bundledTestlibExists(extensionContext)) {
+    const action = await vscode.window.showWarningMessage(
+      t('installBundledTestlibPrompt'),
+      t('install'),
+      t('importFromLocalFile'),
+      t('cancel')
+    );
+    if (action === t('install')) {
+      const installed = await installBundledTestlib(extensionContext, context.workspaceFolder);
+      if (!installed) {
+        return;
+      }
+      testlibFound = true;
+    } else if (action === t('importFromLocalFile')) {
+      await importLocalTestlib(context.workspaceFolder);
+      testlibFound = true;
+    }
+  }
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(testlibFound ? t('checkerSet') : `${t('checkerSet')} ${t('testlibNotFound')} ${t('importTestlibHint')}`);
+}
+
+async function clearCheckerCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  await updateProblemChecker(context.workspaceFolder, context.problem.id, { enabled: false, type: 'none' });
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(t('checkerCleared'));
+}
+
+async function openCheckerCommand(problemId: string | undefined): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const checkerSource = context.problem.checker?.source;
+  if (!checkerSource) {
+    vscode.window.showWarningMessage(t('noCheckerSet'));
+    return;
+  }
+
+  const checkerPath = path.isAbsolute(checkerSource)
+    ? checkerSource
+    : resolveProblemReferencePath(context.workspaceFolder, checkerSource);
+  if (!(await exists(checkerPath))) {
+    vscode.window.showWarningMessage(t('checkerMissing'));
+    return;
+  }
+
+  await openFileInEditor(checkerPath, t('checkerMissing'));
+}
+
+async function importTestlibCommand(extensionContext: vscode.ExtensionContext): Promise<void> {
+  const workspaceFolder = getWorkspaceFolder();
+  if (!workspaceFolder) {
+    return;
+  }
+
+  if (await bundledTestlibExists(extensionContext)) {
+    const picked = await vscode.window.showQuickPick(
+      [
+        { label: t('installBundledTestlib'), value: 'bundled' as const },
+        { label: t('importFromLocalFile'), value: 'local' as const }
+      ],
+      {
+        title: t('importTestlib')
+      }
+    );
+    if (!picked) {
+      return;
+    }
+    if (picked.value === 'bundled') {
+      await installBundledTestlib(extensionContext, workspaceFolder);
+      return;
+    }
+  }
+
+  await importLocalTestlib(workspaceFolder);
+}
+
+async function importLocalTestlib(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
+  const uri = await pickTestlibFile();
+  if (!uri) {
+    return;
+  }
+
+  if (path.basename(uri.fsPath).toLowerCase() !== 'testlib.h') {
+    const confirmed = await vscode.window.showWarningMessage(
+      t('testlibNameWarning'),
+      { modal: true },
+      t('select'),
+      t('cancel')
+    );
+    if (confirmed !== t('select')) {
+      return;
+    }
+  }
+
+  await importTestlibToManaged(workspaceFolder, uri.fsPath);
+  vscode.window.showInformationMessage(t('testlibImported'));
+}
+
+async function openTestlibCommand(problemId: string | undefined): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  const workspaceFolder = context?.workspaceFolder ?? getWorkspaceFolder();
+  if (!workspaceFolder) {
+    return;
+  }
+
+  const checkerSource = context?.problem.checker?.source
+    ? path.isAbsolute(context.problem.checker.source)
+      ? context.problem.checker.source
+      : resolveProblemReferencePath(workspaceFolder, context.problem.checker.source)
+    : workspaceFolder.uri.fsPath;
+  const resolved = await resolveTestlibForChecker(workspaceFolder, checkerSource, context?.problem.checker);
+  if (!resolved.found || !resolved.testlibPath) {
+    vscode.window.showWarningMessage(`${t('testlibNotFound')} ${t('bundledAvailableHint')}`);
+    return;
+  }
+
+  await openFileInEditor(resolved.testlibPath, t('testlibMissing'));
+}
+
+async function installBundledTestlib(
+  context: vscode.ExtensionContext,
+  workspaceFolder: vscode.WorkspaceFolder
+): Promise<boolean> {
+  const bundledPath = getBundledTestlibPath(context);
+  if (!(await exists(bundledPath))) {
+    vscode.window.showWarningMessage(t('bundledTestlibMissing'));
+    return false;
+  }
+
+  const targetPath = path.join(workspaceFolder.uri.fsPath, '.oitest', 'tools', 'testlib', 'testlib.h');
+  if (await exists(targetPath)) {
+    const confirmed = await vscode.window.showWarningMessage(
+      t('overwriteTestlibPrompt'),
+      { modal: true },
+      t('install'),
+      t('cancel')
+    );
+    if (confirmed !== t('install')) {
+      return false;
+    }
+  }
+
+  await importTestlibToManaged(workspaceFolder, bundledPath);
+  vscode.window.showInformationMessage(t('bundledTestlibInstalled'));
+  return true;
+}
+
+async function bundledTestlibExists(context: vscode.ExtensionContext): Promise<boolean> {
+  return exists(getBundledTestlibPath(context));
+}
+
+function getBundledTestlibPath(context: vscode.ExtensionContext): string {
+  return path.join(context.extensionUri.fsPath, 'resources', 'testlib', 'testlib.h');
+}
+
+async function pickCheckerFile(): Promise<vscode.Uri | undefined> {
+  const uris = await vscode.window.showOpenDialog({
+    title: t('selectCheckerCpp'),
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    openLabel: t('select'),
+    filters: {
+      'C++ Source': ['cpp', 'cc', 'cxx', 'c++']
+    }
+  });
+  return uris?.[0];
+}
+
+async function pickTestlibFile(): Promise<vscode.Uri | undefined> {
+  const uris = await vscode.window.showOpenDialog({
+    title: t('importTestlib'),
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    openLabel: t('select'),
+    filters: {
+      'testlib.h': ['h', 'hpp'],
+      [t('statementFile')]: ['*']
+    }
+  });
+  return uris?.[0];
+}
+
 async function setProblemStandardCommand(
   problemId: string | undefined,
   sampleTreeProvider: SampleTreeProvider
@@ -1250,6 +1519,52 @@ async function openSampleDiffCommand(problemId: string | undefined, sampleId: nu
     vscode.Uri.file(outputPath),
     t('diffTitle', { sample: context.sample.name })
   );
+}
+
+async function openCheckerArtifactCommand(
+  problemId: string | undefined,
+  sampleId: number | undefined,
+  kind: 'stdout' | 'stderr'
+): Promise<void> {
+  const context = await getSampleContext(problemId, sampleId);
+  if (!context) {
+    return;
+  }
+
+  const reportPath = getProblemReportPath(context.workspaceFolder, context.problem.id);
+  if (!(await exists(reportPath))) {
+    vscode.window.showWarningMessage(t('noReport'));
+    return;
+  }
+
+  try {
+    const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as { samples?: Array<{ index?: number; id?: string; checker?: { stdout?: string; stderr?: string } }> };
+    const sampleReport = report.samples?.find((entry) =>
+      entry.index === context.sample.index || entry.id === context.sample.id
+    );
+    const artifact = kind === 'stdout' ? sampleReport?.checker?.stdout : sampleReport?.checker?.stderr;
+    if (!artifact) {
+      vscode.window.showWarningMessage(kind === 'stdout' ? t('checkerOutputMissing') : t('checkerStderrMissing'));
+      return;
+    }
+
+    const artifactPath = path.isAbsolute(artifact)
+      ? artifact
+      : resolveProblemReferencePath(context.workspaceFolder, artifact);
+    await openFileInEditor(artifactPath, kind === 'stdout' ? t('checkerOutputMissing') : t('checkerStderrMissing'));
+  } catch {
+    vscode.window.showWarningMessage(kind === 'stdout' ? t('checkerOutputMissing') : t('checkerStderrMissing'));
+  }
+}
+
+async function openFileInEditor(filePath: string, missingMessage: string): Promise<void> {
+  if (!(await exists(filePath))) {
+    vscode.window.showWarningMessage(missingMessage);
+    return;
+  }
+
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+  await vscode.window.showTextDocument(document, { preview: false });
 }
 
 async function deleteSampleCommand(

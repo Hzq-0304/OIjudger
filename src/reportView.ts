@@ -162,7 +162,10 @@ function renderReportBody(
       <div><span>${escapeHtml(t('problem'))}</span><strong>${escapeHtml(problem?.name ?? '-')}</strong></div>
       <div><span>${escapeHtml(t('statement'))}</span><strong>${escapeHtml(problem?.statement ? basename(problem.statement.path) : t('noStatementBound'))}</strong></div>
       <div><span>${escapeHtml(t('program'))}</span><strong>${escapeHtml(report.sourceName ?? basename(report.source || (problem ? getDefaultProblemSource(problem) : '') || ''))}</strong></div>
+      <div><span>${escapeHtml(t('judgeMode'))}</span><strong>${escapeHtml(formatJudgeMode(report))}</strong></div>
+      ${report.checker?.enabled && report.checker.source ? `<div><span>${escapeHtml(t('checker'))}</span><strong>${escapeHtml(basename(report.checker.source))}</strong></div>` : ''}
       <div><span>${escapeHtml(t('accepted'))}</span><strong>${report.summary.accepted}/${report.summary.total}</strong></div>
+      ${report.score ? `<div><span>${escapeHtml(t('score'))}</span><strong>${report.score.earned}/${report.score.total}</strong></div>` : ''}
       <div><span>${escapeHtml(t('compile'))}</span><strong>${formatDuration(report.compile?.timeMs)}</strong></div>
       <div><span>${escapeHtml(t('total'))}</span><strong>${formatDuration(report.totalTimeMs)}</strong></div>
       <div><span>${escapeHtml(t('timeLimit'))}</span><strong>${report.timeLimitMs} ms</strong></div>
@@ -188,6 +191,10 @@ function formatStack(report: JudgeReport): string {
     return t('stackDisabled');
   }
   return stack.sizeMb ? `${stack.sizeMb} MB` : '';
+}
+
+function formatJudgeMode(report: JudgeReport): string {
+  return report.judgeMode === 'testlib' ? t('testlibCheckerMode') : t('normalCompare');
 }
 
 function basename(filePath: string): string {
@@ -251,6 +258,8 @@ function createPanel(context: vscode.ExtensionContext, title: string, problemId?
       output: 'oijudger.openSampleUserOutput',
       stderr: 'oijudger.openSampleStderr',
       diff: 'oijudger.openSampleDiff',
+      checkerOutput: 'oijudger.openCheckerOutput',
+      checkerStderr: 'oijudger.openCheckerStderr',
       delete: 'oijudger.deleteSample'
     };
     const command = commandMap[typed.command];
@@ -274,6 +283,8 @@ function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: Sampl
       <dt>${escapeHtml(t('elapsed'))}</dt><dd>${formatDuration(sample.timeMs ?? sample.elapsedMs)}</dd>
       <dt>${escapeHtml(t('compareTime'))}</dt><dd>${formatDuration(sample.compareTimeMs)}</dd>
       <dt>${escapeHtml(t('source'))}</dt><dd>${escapeHtml(t(sourceType === 'external' ? 'externalSample' : 'managedSample'))}</dd>
+      ${sample.score !== undefined ? `<dt>${escapeHtml(t('score'))}</dt><dd>${sample.score}</dd>` : ''}
+      ${sample.checker?.message ? `<dt>${escapeHtml(t('checker'))}</dt><dd>${escapeHtml(sample.checker.message)}</dd>` : ''}
       <dt>${escapeHtml(t('input'))}</dt><dd>${escapeHtml(sample.input)}</dd>
       <dt>${escapeHtml(t('answer'))}</dt><dd>${escapeHtml(sample.answer)}</dd>
       <dt>${escapeHtml(t('userOutput'))}</dt><dd>${escapeHtml(sample.output ?? sample.actualOutput)}</dd>
@@ -317,6 +328,8 @@ function renderActionButtons(sampleId: number | undefined, problemId: string | u
     <button data-command="output" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('userOutput'))}</button>
     <button data-command="stderr" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('openStderr'))}</button>
     <button data-command="diff" data-sample="${sampleValue}"${diffDisabled}>${escapeHtml(t('openDiff'))}</button>
+    <button data-command="checkerOutput" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('checkerOutput'))}</button>
+    <button data-command="checkerStderr" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('checkerStderr'))}</button>
     <button data-command="delete" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('delete'))}</button>
   </div>`;
 }
@@ -485,6 +498,8 @@ function statusLabel(status: string): string {
       return t('statusMLE');
     case 'ERR':
       return t('statusERR');
+    case 'Checker Error':
+      return t('checkerError');
     case 'Skipped':
       return t('statusSkipped');
     case 'Missing':

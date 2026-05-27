@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { t } from './i18n';
-import { OITestConfig, SampleConfig, StackConfig } from './types';
+import { CheckerConfig, OITestConfig, SampleConfig, StackConfig } from './types';
 
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
   const editor = vscode.window.activeTextEditor;
@@ -173,6 +173,10 @@ export function createDefaultConfig(): OITestConfig {
       auto: true,
       sizeMb: null
     },
+    checker: {
+      enabled: false,
+      type: 'none'
+    },
     samples: []
   };
 }
@@ -244,6 +248,7 @@ function normalizeConfig(config: OITestConfig): OITestConfig {
       ...config.limits
     },
     stack: normalizeStackConfig(config.stack),
+    checker: normalizeCheckerConfig(config.checker),
     samples: config.samples ?? []
   };
 }
@@ -252,6 +257,24 @@ export function normalizeStackConfig(stack: StackConfig | undefined): StackConfi
   return {
     auto: stack?.auto ?? true,
     sizeMb: stack?.sizeMb ?? null
+  };
+}
+
+export function normalizeCheckerConfig(checker: CheckerConfig | undefined): CheckerConfig {
+  if (!checker?.enabled || checker.type === 'none') {
+    return { enabled: false, type: 'none' };
+  }
+
+  return {
+    enabled: true,
+    type: checker.type,
+    source: checker.source,
+    exe: checker.exe,
+    timeLimitMs: checker.timeLimitMs ?? 5000,
+    testlib: {
+      mode: checker.testlib?.mode ?? 'auto',
+      path: checker.testlib?.path ?? null
+    }
   };
 }
 

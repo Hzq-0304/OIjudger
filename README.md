@@ -109,6 +109,38 @@ Runtime Error Explanation:
   - `SIGABRT`: Aborted
 - The explanation is a diagnostic hint, not a final proof. Always combine it with the input file, stderr, the reproduction command, and a debugger when needed.
 
+Testlib Checker:
+
+- OIjudger supports first-version testlib-style checkers for per-problem judging.
+- Run `OIjudger: Set Checker` and choose `Testlib checker`, then select a local `checker.cpp`.
+- A typical checker includes `#include "testlib.h"` and calls `registerTestlibCmd(argc, argv)`.
+- OIjudger runs the checker as:
+
+```text
+checker.exe input.txt useroutput.txt answer.txt
+```
+
+- `testlib.h` is resolved in this order:
+  - the same folder as `checker.cpp`
+  - the workspace root
+  - `.oitest/tools/testlib/testlib.h`
+  - a custom path recorded in the checker config
+- OIjudger can install the bundled `testlib.h` shipped with the extension, or import a local copy selected by the user.
+- User-provided copies still have higher priority than the bundled copy once installed into the workspace.
+- OIjudger does not download or generate `testlib.h`. If it is missing, run `OIjudger: Import testlib.h`.
+- When bundled resources are available, `OIjudger: Import testlib.h` offers:
+  - `Install bundled testlib.h`
+  - `Import testlib.h from local file`
+- Bundled source and license details are preserved in `resources/testlib/README.md` and `resources/testlib/LICENSE`.
+- Checker executables are built under `.oitest/problems/<problemId>/checker/`.
+- Checker stdout/stderr are saved beside each sample output as `checker-stdout.txt` and `checker-stderr.txt`.
+- First-version verdict rules:
+  - checker exit code `0` => `AC`
+  - checker exit code not `0` => `WA`
+  - checker compile/run/timeout failure => `Checker Error`
+- Normal compare is unchanged when no checker is enabled.
+- Later versions may add `score-json`, `score-plain`, and partial score checker protocols.
+
 Commands:
 
 - `OIjudger: Init Problem`
