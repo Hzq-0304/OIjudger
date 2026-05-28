@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { promises as fs } from 'fs';
-import { getPlainCheckerInvalidMessage, parsePlainCheckerOutput } from './plainCheckerParser';
+import { getPlainCheckerInvalidMessage, parsePlainCheckerOutput, PlainCheckerParseOptions, resolvePlainCheckerOptions } from './plainCheckerParser';
 import { runProcess } from './runner';
 import { getLocale } from './i18n';
 import { explainRuntimeError } from './runtimeErrorExplainer';
@@ -17,6 +17,7 @@ export type CheckerRunInput = {
   outputPath: string;
   outputRel: string;
   timeLimitMs: number;
+  plainOptions?: Partial<PlainCheckerParseOptions>;
 };
 
 export async function runTestlibChecker(input: CheckerRunInput): Promise<{
@@ -142,7 +143,8 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
       };
     }
 
-    const verdict = parsePlainCheckerOutput(result.stdout);
+    const plainOptions = resolvePlainCheckerOptions(input.plainOptions);
+    const verdict = parsePlainCheckerOutput(result.stdout, plainOptions);
     if (verdict.type === 'Invalid') {
       const abnormalExit = explainCheckerAbnormalExit(result.code, result.signal);
       if (abnormalExit) {
@@ -151,7 +153,11 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
           score: 0,
           report: createPlainReport(input, result.code, result.signal, result.timeMs, {
             finalLine: verdict.finalLine,
+            verdictLine: verdict.verdictLine,
             verdict: 'CheckerError',
+            verdictPosition: plainOptions.verdictPosition,
+            acceptedToken: plainOptions.acceptedToken,
+            wrongAnswerToken: plainOptions.wrongAnswerToken,
             message: abnormalExit.message,
             errorKind: abnormalExit.errorKind,
             errorName: abnormalExit.errorName
@@ -163,8 +169,12 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
         score: 0,
         report: createPlainReport(input, result.code, result.signal, result.timeMs, {
           finalLine: verdict.finalLine,
+          verdictLine: verdict.verdictLine,
           verdict: 'Invalid',
-          message: verdict.message
+          verdictPosition: plainOptions.verdictPosition,
+          acceptedToken: plainOptions.acceptedToken,
+          wrongAnswerToken: plainOptions.wrongAnswerToken,
+          message: formatPlainInvalidMessage(plainOptions, verdict.verdictLine)
         })
       };
     }
@@ -179,7 +189,11 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
         score: 1,
         report: createPlainReport(input, result.code, result.signal, result.timeMs, {
           finalLine: verdict.finalLine,
+          verdictLine: verdict.verdictLine,
           verdict: 'AC',
+          verdictPosition: plainOptions.verdictPosition,
+          acceptedToken: plainOptions.acceptedToken,
+          wrongAnswerToken: plainOptions.wrongAnswerToken,
           message
         })
       };
@@ -190,7 +204,11 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
         score: 0,
         report: createPlainReport(input, result.code, result.signal, result.timeMs, {
           finalLine: verdict.finalLine,
+          verdictLine: verdict.verdictLine,
           verdict: 'WA',
+          verdictPosition: plainOptions.verdictPosition,
+          acceptedToken: plainOptions.acceptedToken,
+          wrongAnswerToken: plainOptions.wrongAnswerToken,
           message
         })
       };
@@ -202,7 +220,11 @@ export async function runPlainChecker(input: CheckerRunInput): Promise<{
       scoreText: verdict.scoreText,
       report: createPlainReport(input, result.code, result.signal, result.timeMs, {
         finalLine: verdict.finalLine,
+        verdictLine: verdict.verdictLine,
         verdict: 'Score',
+        verdictPosition: plainOptions.verdictPosition,
+        acceptedToken: plainOptions.acceptedToken,
+        wrongAnswerToken: plainOptions.wrongAnswerToken,
         score: verdict.score,
         scoreText: verdict.scoreText,
         message
@@ -266,6 +288,10 @@ function createPlainReport(
   timeMs: number,
   details: {
     finalLine?: string;
+    verdictLine?: string;
+    verdictPosition?: PlainCheckerParseOptions['verdictPosition'];
+    acceptedToken?: string;
+    wrongAnswerToken?: string;
     verdict: 'AC' | 'WA' | 'Score' | 'Invalid' | 'CheckerError';
     score?: number;
     scoreText?: string;
@@ -285,12 +311,16 @@ function createPlainReport(
     timeMs,
     output: input.outputRel,
     finalLine: details.finalLine,
+    verdictLine: details.verdictLine ?? details.finalLine,
+    verdictPosition: details.verdictPosition,
+    acceptedToken: details.acceptedToken,
+    wrongAnswerToken: details.wrongAnswerToken,
     verdict: details.verdict,
     errorKind: details.errorKind,
     errorName: details.errorName,
     score: details.score,
     scoreText: details.scoreText,
-    message: details.message ?? (details.verdict === 'Invalid' ? getPlainCheckerInvalidMessage() : undefined)
+    message: details.message ?? (details.verdict === 'Invalid' ? getPlainCheckerInvalidMessage(details) : undefined)
   };
 }
 
@@ -300,6 +330,26 @@ function extractCheckerMessage(stdout: string, stderr: string): string | undefin
     .map((line) => line.trim())
     .filter(Boolean);
   return combined.slice(0, 5).join('\n') || undefined;
+}
+
+function formatPlainInvalidMessage(
+  options: PlainCheckerParseOptions,
+  actualLine: string | undefined
+): string {
+  if (getLocale() === 'zh') {
+    return [
+      'Plain Checker 输出格式无效。',
+      `当前协议要求 stdout 的${options.verdictPosition === 'firstLine' ? '第一个' : '最后一个'}非空行必须是：`,
+      `- ${options.acceptedToken}`,
+      `- ${options.wrongAnswerToken}`,
+      '- 数字分数',
+      '',
+      '实际读取到：',
+      actualLine ?? '<empty>'
+    ].join('\n');
+  }
+
+  return getPlainCheckerInvalidMessage(options, actualLine);
 }
 
 async function writeCheckerOutput(outputPath: string, stdout: string, stderr: string): Promise<void> {

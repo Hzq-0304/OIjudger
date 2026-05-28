@@ -285,7 +285,10 @@ export function normalizeCheckerConfig(checker: CheckerConfig | undefined): Chec
       path: checker.testlib?.path ?? null
     },
     plain: {
-      protocolVersion: checker.plain?.protocolVersion ?? 1
+      protocolVersion: checker.plain?.protocolVersion ?? 1,
+      verdictPosition: checker.plain?.verdictPosition === 'firstLine' ? 'firstLine' : 'lastLine',
+      acceptedToken: checker.plain?.acceptedToken || 'AC',
+      wrongAnswerToken: checker.plain?.wrongAnswerToken || 'WA'
     }
   };
 }

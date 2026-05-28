@@ -5,6 +5,7 @@ export type CheckerType = 'none' | 'testlib' | 'plain';
 export type JudgeMode = 'normal' | 'checker';
 export type IoMode = 'stdio' | 'fileio';
 export type TestlibMode = 'auto' | 'managed' | 'custom';
+export type PlainCheckerVerdictPosition = 'firstLine' | 'lastLine';
 
 export type ProblemStatementType = 'markdown' | 'pdf' | 'text' | 'unknown';
 
@@ -41,9 +42,14 @@ export type CheckerConfig = {
     mode: TestlibMode;
     path?: string | null;
   };
-  plain?: {
-    protocolVersion?: 1;
-  };
+  plain?: PlainCheckerConfig;
+};
+
+export type PlainCheckerConfig = {
+  protocolVersion?: 1;
+  verdictPosition?: PlainCheckerVerdictPosition;
+  acceptedToken?: string;
+  wrongAnswerToken?: string;
 };
 
 export type FileIoConfig = {
@@ -142,6 +148,10 @@ export type CheckerSampleReport = {
   stdout?: string;
   stderr?: string;
   finalLine?: string;
+  verdictLine?: string;
+  verdictPosition?: PlainCheckerVerdictPosition;
+  acceptedToken?: string;
+  wrongAnswerToken?: string;
   verdict?: 'AC' | 'WA' | 'Score' | 'Invalid' | 'CheckerError';
   errorKind?: RuntimeErrorSummary['kind'] | 'CheckerError';
   errorName?: string;

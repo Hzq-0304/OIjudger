@@ -12,7 +12,7 @@ import {
   resolveProblemReferencePath
 } from './problems';
 import { getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
-import { JudgeMode, JudgeReport, ProblemConfig, SampleReport, SampleStatus } from './types';
+import { CheckerType, JudgeMode, JudgeReport, ProblemConfig, SampleReport, SampleStatus } from './types';
 
 type NodeKind = 'group' | 'problem' | 'info' | 'sample' | 'action';
 type NodeGroup =
@@ -39,6 +39,7 @@ type TreeNode = {
   sampleStatus?: SampleStatus | 'Not Run';
   hasCheckerOutput?: boolean;
   problemJudgeMode?: JudgeMode;
+  problemCheckerType?: CheckerType;
 };
 
 export class SampleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
@@ -141,7 +142,8 @@ function createProblemNode(problem: ProblemConfig): TreeNode {
     icon: new vscode.ThemeIcon('symbol-file'),
     collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
     problemId: problem.id,
-    problemJudgeMode: getProblemJudgeMode(problem)
+    problemJudgeMode: getProblemJudgeMode(problem),
+    problemCheckerType: problem.checker?.type
   };
 }
 
@@ -354,7 +356,7 @@ async function createSampleNodes(
           `${t('status')}: ${t('statusScored')}`,
           `${t('checkerScore')}: ${sampleReport.checker?.scoreText ?? sampleReport.score ?? ''}`,
           `${t('checker')}: ${t('plainCheckerMode')}`,
-          t('plainCheckerProtocol')
+          formatPlainCheckerProtocol(sampleReport.checker)
         ] : []),
         ...(sampleReport?.checker?.message ? [`${t('checker')}: ${sampleReport.checker.message}`] : []),
         ...(sampleReport?.checker?.output ? [`${t('checkerOutput')}: ${sampleReport.checker.output}`] : []),
@@ -464,6 +466,9 @@ function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
   const checkerActions = getProblemJudgeMode(problem) === 'checker'
     ? [
       actionNode(t('setChecker'), 'oijudger.setChecker', 'verified', problem.id),
+      ...(problem.checker?.type === 'plain' ? [
+        actionNode(t('setPlainCheckerProtocol'), 'oijudger.setPlainCheckerProtocol', 'settings', problem.id)
+      ] : []),
       actionNode(t('clearChecker'), 'oijudger.clearChecker', 'clear-all', problem.id),
       actionNode(t('openChecker'), 'oijudger.openChecker', 'go-to-file', problem.id),
       actionNode(t('importTestlib'), 'oijudger.importTestlib', 'cloud-download', problem.id),
@@ -500,11 +505,13 @@ function createCheckerInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem:
     : undefined;
   const missing = !checkerPath || !existsSync(checkerPath);
   const checkerMode = checker.type === 'plain' ? t('plainCheckerMode') : t('testlibCheckerMode');
+  const protocol = checker.type === 'plain' ? formatPlainCheckerProtocol(checker) : undefined;
   return {
     kind: 'info',
     label: missing
       ? `${t('checker')}: ${t('statusMissing')}`
       : `${t('checker')}: ${checkerMode} ${path.basename(checkerPath)}`,
+    description: protocol,
     tooltip: checkerPath ?? t('checkerMissing'),
     icon: missing
       ? new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'))
@@ -697,6 +704,24 @@ function getProblemJudgeMode(problem: ProblemConfig): JudgeMode {
   return problem.judgeMode ?? (problem.checker?.enabled && problem.checker.type !== 'none' ? 'checker' : 'normal');
 }
 
+type PlainProtocolSource = {
+  plain?: {
+    verdictPosition?: 'firstLine' | 'lastLine';
+    acceptedToken?: string;
+    wrongAnswerToken?: string;
+  };
+  verdictPosition?: 'firstLine' | 'lastLine';
+  acceptedToken?: string;
+  wrongAnswerToken?: string;
+};
+
+function formatPlainCheckerProtocol(checker: PlainProtocolSource | undefined): string {
+  const verdictPosition = checker?.plain?.verdictPosition ?? checker?.verdictPosition ?? 'lastLine';
+  const acceptedToken = checker?.plain?.acceptedToken ?? checker?.acceptedToken ?? 'AC';
+  const wrongAnswerToken = checker?.plain?.wrongAnswerToken ?? checker?.wrongAnswerToken ?? 'WA';
+  return `${t('protocol')}: ${t(verdictPosition === 'firstLine' ? 'plainVerdictFirstLineShort' : 'plainVerdictLastLineShort')}, AC=${acceptedToken}, WA=${wrongAnswerToken}`;
+}
+
 function getProblemIoMode(problem: ProblemConfig): 'stdio' | 'fileio' {
   return problem.ioMode === 'fileio' ? 'fileio' : 'stdio';
 }
@@ -720,6 +745,9 @@ function getContextValue(element: TreeNode): string {
         : 'sample';
   }
   if (element.kind === 'problem') {
+    if (element.problemJudgeMode === 'checker' && element.problemCheckerType === 'plain') {
+      return 'oijudgerProblemPlainChecker';
+    }
     return element.problemJudgeMode === 'checker' ? 'oijudgerProblemChecker' : 'oijudgerProblemNormal';
   }
   return `oijudger${capitalize(element.kind)}`;

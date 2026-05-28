@@ -22,6 +22,7 @@ import {
   resolveSamplePath
 } from './sampleFiles';
 import { CheckerSampleReport, CompileStackReport, FileIoConfig, IoMode, JudgeReport, OITestConfig, ProcessResult, SampleConfig, SampleReport } from './types';
+import { PlainCheckerParseOptions, resolvePlainCheckerOptions } from './plainCheckerParser';
 
 type RunClassification = 'TLE' | 'RE' | undefined;
 
@@ -32,6 +33,7 @@ type CheckerContext = {
   compilerBin?: string;
   testlibPath?: string;
   timeLimitMs: number;
+  plainOptions?: Partial<PlainCheckerParseOptions>;
 };
 
 type SampleIoContext = {
@@ -91,7 +93,8 @@ export async function runAllSamples(
         exe: checkerCompile.exe,
         compilerBin: checkerCompile.compilerBin,
         testlibPath: checkerCompile.testlib?.testlibPath,
-        timeLimitMs: getCheckerTimeLimitMs(activeChecker)
+        timeLimitMs: getCheckerTimeLimitMs(activeChecker),
+        plainOptions: activeChecker?.type === 'plain' ? resolvePlainCheckerOptions(activeChecker.plain) : undefined
       }
     : undefined;
 
@@ -555,7 +558,8 @@ async function judgeSample(
       answerPath: fileStatus.answerPath,
       outputPath: resolveWorkspacePath(workspaceFolder, checkerOutputRel),
       outputRel: checkerOutputRel,
-      timeLimitMs: checkerContext.timeLimitMs
+      timeLimitMs: checkerContext.timeLimitMs,
+      plainOptions: checkerContext.plainOptions
     };
     const checkerResult = checkerContext.type === 'plain'
       ? await runPlainChecker(checkerInput)

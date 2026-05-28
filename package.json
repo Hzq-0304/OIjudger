@@ -1,7 +1,7 @@
 {
   "name": "oijudger",
   "displayName": "OIjudger",
-  "description": "A local multi-sample judge for OIers with normal compare, testlib checkers, and plain checkers.",
+  "description": "A local multi-sample judge for OIers with normal compare, testlib checkers, and configurable plain checkers.",
   "version": "0.3.2",
   "publisher": "local",
   "engines": {
@@ -55,6 +55,7 @@
     "onCommand:oijudger.deleteSample",
     "onView:oijudger.samplesView",
     "onCommand:oijudger.setChecker",
+    "onCommand:oijudger.setPlainCheckerProtocol",
     "onCommand:oijudger.clearChecker",
     "onCommand:oijudger.openChecker",
     "onCommand:oijudger.importTestlib",
@@ -285,6 +286,11 @@
         "icon": "$(verified)"
       },
       {
+        "command": "oijudger.setPlainCheckerProtocol",
+        "title": "OIjudger: 设置 Plain Checker 协议/Set Plain Checker Protocol",
+        "icon": "$(settings)"
+      },
+      {
         "command": "oijudger.clearChecker",
         "title": "OIjudger: 清除 Checker/Clear Checker",
         "icon": "$(clear-all)"
@@ -458,17 +464,22 @@
         },
         {
           "command": "oijudger.setChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
           "group": "3_checker@1"
         },
         {
+          "command": "oijudger.setPlainCheckerProtocol",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemPlainChecker",
+          "group": "3_checker@1.5"
+        },
+        {
           "command": "oijudger.clearChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
           "group": "3_checker@2"
         },
         {
           "command": "oijudger.openChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
           "group": "3_checker@3"
         },
         {

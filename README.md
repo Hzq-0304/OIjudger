@@ -186,7 +186,7 @@ checker.exe input.txt useroutput.txt answer.txt
 - Checker executables are built under `.oitest/problems/<problemId>/checker/`.
 - Checker stdout and stderr are merged into one file beside each sample output as `checker-output.txt`.
 - testlib checkers often print verdict details to stderr; users can still view all checker information through the single `Checker Output` action.
-- Plain Checker verdict parsing still uses only the last non-empty line of the original stdout. Merged stderr content is saved for viewing, but it is not parsed as the verdict.
+- Plain Checker verdict parsing still uses only the configured verdict line from the original stdout. Merged stderr content is saved for viewing, but it is not parsed as the verdict.
 - First-version verdict rules:
   - checker exit code `0` => `AC`
   - checker exit code `1` => `WA`
@@ -210,11 +210,17 @@ OIjudger runs it with the same arguments as a testlib checker:
 checker.exe input.txt useroutput.txt answer.txt
 ```
 
-The last non-empty line of stdout must be one of:
+The default protocol reads the last non-empty line of stdout. That line must be one of:
 
 - `AC`
 - `WA`
 - a numeric score
+
+You can also run `OIjudger: Set Plain Checker Protocol` to configure:
+
+- whether the verdict is read from the first or last non-empty stdout line
+- the accepted token, default `AC`
+- the wrong-answer token, default `WA`
 
 Examples:
 
@@ -236,9 +242,9 @@ This marks the sample as wrong answer.
 
 This returns a score of `37.5`. OIjudger shows a question mark icon and displays `37.5` on the right side. It does not mark the sample as accepted or wrong.
 
-Important: if you want WA, output `WA`. If you output `0`, OIjudger treats it as score `0`, not as WA. If you output `100`, OIjudger treats it as score `100`, not as AC.
+Important: if you want WA, output the configured wrong-answer token. If you output `0`, OIjudger treats it as score `0`, not as WA. If you output `100`, OIjudger treats it as score `100`, not as AC.
 
-Invalid final lines include:
+Under the default protocol, invalid verdict lines include:
 
 - `Accepted`
 - `Wrong Answer`
@@ -247,6 +253,33 @@ Invalid final lines include:
 - `通过`
 
 These are reported as `Checker Error`.
+
+Custom protocol example:
+
+- Verdict line: `First non-empty line`
+- Accepted token: `OK`
+- Wrong answer token: `NG`
+
+```text
+OK
+details...
+```
+
+This marks the sample as accepted.
+
+```text
+NG
+wrong answer details...
+```
+
+This marks the sample as wrong answer.
+
+```text
+37.5
+matched 15 cases
+```
+
+This shows a question mark icon and score `37.5`. Numeric verdict lines are always treated as scores, so configure accepted/wrong tokens as non-numeric strings.
 
 Minimal Plain Checker example:
 
@@ -305,6 +338,7 @@ Commands:
 - `OIjudger: Set Time Limit`
 - `OIjudger: Set Memory Limit`
 - `OIjudger: Set Stack Size`
+- `OIjudger: Set Plain Checker Protocol`
 - `OIjudger: Open Last Report`
 - `OIjudger: Clear Outputs`
 

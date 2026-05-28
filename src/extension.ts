@@ -18,6 +18,7 @@ import {
 import { ensureCompilerConfigured, findCompiler, pickCompilerPath, selectCompiler } from './compilerDetection';
 import { t } from './i18n';
 import { runAllSamples } from './judge';
+import { isNumericPlainCheckerToken, resolvePlainCheckerOptions } from './plainCheckerParser';
 import { explainRuntimeError, renderRuntimeErrorExplanation } from './runtimeErrorExplainer';
 import {
   openLastReport,
@@ -64,7 +65,7 @@ import {
 } from './sampleFiles';
 import { SampleTreeProvider } from './sampleTreeProvider';
 import { importTestlibToManaged, resolveTestlibForChecker } from './testlibResolver';
-import { ProblemConfig } from './types';
+import { PlainCheckerConfig, ProblemConfig } from './types';
 
 const output = vscode.window.createOutputChannel('OIjudger');
 const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -347,6 +348,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('oijudger.setChecker', async (problemArg?: unknown) => {
       await setCheckerCommand(context, readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.setPlainCheckerProtocol', async (problemArg?: unknown) => {
+      await setPlainCheckerProtocolCommand(readProblemId(problemArg), sampleTreeProvider);
     }),
     vscode.commands.registerCommand('oijudger.clearChecker', async (problemArg?: unknown) => {
       await clearCheckerCommand(readProblemId(problemArg), sampleTreeProvider);
@@ -1179,6 +1183,15 @@ async function setCheckerCommand(
     return;
   }
 
+  const plain = picked.type === 'plain'
+    ? await readPlainCheckerProtocol(context.problem.checker?.plain)
+    : {
+      protocolVersion: 1 as const
+    };
+  if (!plain) {
+    return;
+  }
+
   const checker = {
     enabled: true,
     type: picked.type,
@@ -1190,7 +1203,7 @@ async function setCheckerCommand(
       path: null
     },
     plain: {
-      protocolVersion: 1 as const
+      ...plain
     }
   };
   await updateProblemChecker(context.workspaceFolder, context.problem.id, checker);
@@ -1236,6 +1249,111 @@ async function clearCheckerCommand(
   await updateProblemChecker(context.workspaceFolder, context.problem.id, { enabled: false, type: 'none' });
   sampleTreeProvider.refresh();
   vscode.window.showInformationMessage(t('checkerCleared'));
+}
+
+async function setPlainCheckerProtocolCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+  if (getEffectiveJudgeMode(context.problem) !== 'checker' || context.problem.checker?.type !== 'plain') {
+    vscode.window.showWarningMessage(t('notPlainChecker'));
+    return;
+  }
+
+  const plain = await readPlainCheckerProtocol(context.problem.checker.plain);
+  if (!plain) {
+    return;
+  }
+
+  await updateProblemChecker(context.workspaceFolder, context.problem.id, {
+    ...context.problem.checker,
+    enabled: true,
+    type: 'plain',
+    plain
+  });
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(t('plainCheckerProtocolUpdated'));
+}
+
+async function readPlainCheckerProtocol(
+  current: PlainCheckerConfig | undefined
+): Promise<{
+  protocolVersion: 1;
+  verdictPosition: 'firstLine' | 'lastLine';
+  acceptedToken: string;
+  wrongAnswerToken: string;
+} | undefined> {
+  const options = resolvePlainCheckerOptions(current);
+  const positionItems = [
+    { label: t('plainVerdictLastLine'), value: 'lastLine' as const },
+    { label: t('plainVerdictFirstLine'), value: 'firstLine' as const }
+  ].sort((left) => left.value === options.verdictPosition ? -1 : 1);
+  const picked = await vscode.window.showQuickPick(
+    positionItems,
+    {
+      title: t('setPlainCheckerProtocol'),
+      placeHolder: t('verdictLine')
+    }
+  );
+  if (!picked) {
+    return undefined;
+  }
+
+  const acceptedToken = await vscode.window.showInputBox({
+    title: t('setPlainCheckerProtocol'),
+    prompt: t('acceptedToken'),
+    value: options.acceptedToken,
+    validateInput: validatePlainAcceptedToken
+  });
+  if (acceptedToken === undefined) {
+    return undefined;
+  }
+
+  const wrongAnswerToken = await vscode.window.showInputBox({
+    title: t('setPlainCheckerProtocol'),
+    prompt: t('wrongAnswerToken'),
+    value: options.wrongAnswerToken,
+    validateInput: (value) => validatePlainWrongAnswerToken(value, acceptedToken)
+  });
+  if (wrongAnswerToken === undefined) {
+    return undefined;
+  }
+
+  return {
+    protocolVersion: 1,
+    verdictPosition: picked.value,
+    acceptedToken: acceptedToken.trim(),
+    wrongAnswerToken: wrongAnswerToken.trim()
+  };
+}
+
+function validatePlainAcceptedToken(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return t('acceptedTokenEmpty');
+  }
+  if (isNumericPlainCheckerToken(trimmed)) {
+    return t('plainTokensCannotBeNumeric');
+  }
+  return undefined;
+}
+
+function validatePlainWrongAnswerToken(value: string, acceptedToken: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return t('wrongAnswerTokenEmpty');
+  }
+  if (trimmed === acceptedToken.trim()) {
+    return t('plainTokensCannotBeSame');
+  }
+  if (isNumericPlainCheckerToken(trimmed)) {
+    return t('plainTokensCannotBeNumeric');
+  }
+  return undefined;
 }
 
 async function openCheckerCommand(problemId: string | undefined): Promise<void> {

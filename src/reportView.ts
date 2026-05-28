@@ -167,6 +167,7 @@ function renderReportBody(
       ${report.ioMode === 'fileio' && report.fileIo ? `<div><span>${escapeHtml(t('inputFile'))}</span><strong>${escapeHtml(report.fileIo.inputFileName)}</strong></div>
       <div><span>${escapeHtml(t('outputFile'))}</span><strong>${escapeHtml(report.fileIo.outputFileName)}</strong></div>` : ''}
       ${isCheckerReport(report) ? `<div><span>${escapeHtml(t('checker'))}</span><strong>${escapeHtml(formatCheckerLine(report))}</strong></div>` : ''}
+      ${getReportCheckerType(report) === 'plain' ? renderPlainCheckerProtocolSummary(report) : ''}
       <div><span>${escapeHtml(t('accepted'))}</span><strong>${report.summary.accepted}/${report.summary.total}</strong></div>
       ${report.summary.wrongAnswer !== undefined ? `<div><span>${escapeHtml(t('statusWA'))}</span><strong>${report.summary.wrongAnswer}</strong></div>` : ''}
       ${report.summary.scored ? `<div><span>${escapeHtml(t('scoredSamples'))}</span><strong>${report.summary.scored}</strong></div>` : ''}
@@ -180,7 +181,7 @@ function renderReportBody(
       <div><span>${escapeHtml(t('stack'))}</span><strong>${escapeHtml(formatStack(report))}</strong></div>
       <div><span>${escapeHtml(t('generated'))}</span><strong>${escapeHtml(new Date(report.generatedAt).toLocaleString())}</strong></div>
     </section>
-    ${getReportCheckerType(report) === 'plain' ? `<section><h2>${escapeHtml(t('plainCheckerMode'))}</h2><p>${escapeHtml(t('plainCheckerProtocol'))}</p></section>` : ''}
+    ${getReportCheckerType(report) === 'plain' ? `<section><h2>${escapeHtml(t('plainCheckerMode'))}</h2><p>${escapeHtml(formatPlainCheckerProtocol(report))}</p></section>` : ''}
     <section>
       <h2>${escapeHtml(t('source'))}</h2>
       <p class="path">${escapeHtml(report.source)}</p>
@@ -405,6 +406,35 @@ function formatCheckerLine(report: JudgeReport): string {
   const type = getReportCheckerType(report);
   const typeLabel = type === 'plain' ? t('plainCheckerMode') : type === 'testlib' ? t('testlibCheckerMode') : t('checkerNotSet');
   return report.checker?.source ? `${typeLabel}: ${basename(report.checker.source)}` : typeLabel;
+}
+
+function renderPlainCheckerProtocolSummary(report: JudgeReport): string {
+  const options = getPlainCheckerProtocol(report);
+  return `<div><span>${escapeHtml(t('verdictLine'))}</span><strong>${escapeHtml(t(options.verdictPosition === 'firstLine' ? 'plainVerdictFirstLine' : 'plainVerdictLastLine'))}</strong></div>
+      <div><span>${escapeHtml(t('acceptedToken'))}</span><strong>${escapeHtml(options.acceptedToken)}</strong></div>
+      <div><span>${escapeHtml(t('wrongAnswerToken'))}</span><strong>${escapeHtml(options.wrongAnswerToken)}</strong></div>`;
+}
+
+function formatPlainCheckerProtocol(report: JudgeReport): string {
+  const options = getPlainCheckerProtocol(report);
+  return [
+    `${t('verdictLine')}: ${t(options.verdictPosition === 'firstLine' ? 'plainVerdictFirstLine' : 'plainVerdictLastLine')}`,
+    `${t('acceptedToken')}: ${options.acceptedToken}`,
+    `${t('wrongAnswerToken')}: ${options.wrongAnswerToken}`
+  ].join('\n');
+}
+
+function getPlainCheckerProtocol(report: JudgeReport): {
+  verdictPosition: 'firstLine' | 'lastLine';
+  acceptedToken: string;
+  wrongAnswerToken: string;
+} {
+  const firstPlainSample = report.samples.find((sample) => sample.checker?.type === 'plain' && sample.checker.verdictPosition);
+  return {
+    verdictPosition: report.checker?.plain?.verdictPosition ?? firstPlainSample?.checker?.verdictPosition ?? 'lastLine',
+    acceptedToken: report.checker?.plain?.acceptedToken ?? firstPlainSample?.checker?.acceptedToken ?? 'AC',
+    wrongAnswerToken: report.checker?.plain?.wrongAnswerToken ?? firstPlainSample?.checker?.wrongAnswerToken ?? 'WA'
+  };
 }
 
 function getReportSampleIndex(sample: SampleReport): number | undefined {
