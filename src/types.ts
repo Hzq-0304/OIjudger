@@ -57,6 +57,39 @@ export type FileIoConfig = {
   outputFileName: string;
 };
 
+export interface SetterConfig {
+  stdProgram?: string;
+  dataCases?: SetterDataCaseConfig[];
+  generator?: SetterGeneratorConfig;
+}
+
+export interface SetterDataCaseConfig {
+  id: string;
+  name: string;
+  sampleId?: string;
+  sampleIndex?: number;
+  role?: 'sample' | 'test';
+  generator?: {
+    enabled?: boolean;
+    generatorId?: string;
+    args?: string[];
+    seed?: string;
+  };
+}
+
+export interface SetterGeneratorConfig {
+  enabled?: boolean;
+  generators?: SetterGeneratorItem[];
+}
+
+export interface SetterGeneratorItem {
+  id: string;
+  name: string;
+  source?: string;
+  command?: string;
+  args?: string[];
+}
+
 export type OITestConfig = {
   version: 1;
   compile?: {
@@ -76,6 +109,7 @@ export type OITestConfig = {
   ioMode?: IoMode;
   fileIo?: FileIoConfig;
   checker?: CheckerConfig;
+  setter?: SetterConfig;
   samples: SampleConfig[];
 };
 

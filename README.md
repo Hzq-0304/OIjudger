@@ -171,6 +171,22 @@ int main() {
 }
 ```
 
+Setter Mode:
+
+- Setter Mode is disabled by default.
+- Enable it in VS Code settings with:
+  - `oijudger.setterMode.enabled`
+- When enabled, OI Judge shows setter tools for each problem:
+  - Select STD
+  - Open STD
+  - Clear STD
+  - Set Sample Name
+- `STD` is the standard solution for problem setters. It is saved separately from the default program used for judging the current solution.
+- This first version does not automatically run STD or generate data.
+- Sample names edited in Setter Mode are display/data-configuration names only. They do not change `sample.id`, `sample.index`, real input/answer files, or `outputs/sample-<index>/`.
+- Setter data configuration is stored in `setter.dataCases` and is reserved for future data generator workflows.
+- Planned future work includes generator configuration, sample number selection, and automatic input/answer generation.
+
 Testlib Checker:
 
 - OI Judge supports first-version testlib-style checkers for per-problem judging.

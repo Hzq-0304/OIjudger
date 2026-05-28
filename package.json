@@ -70,7 +70,11 @@
     "onCommand:oijudger.openChecker",
     "onCommand:oijudger.importTestlib",
     "onCommand:oijudger.openTestlib",
-    "onCommand:oijudger.openCheckerOutput"
+    "onCommand:oijudger.openCheckerOutput",
+    "onCommand:oijudger.selectStdProgram",
+    "onCommand:oijudger.openStdProgram",
+    "onCommand:oijudger.clearStdProgram",
+    "onCommand:oijudger.setSampleName"
   ],
   "main": "./out/extension.js",
   "repository": {
@@ -324,6 +328,26 @@
         "command": "oijudger.openCheckerOutput",
         "title": "OI Judge: Open Checker Output",
         "icon": "$(output)"
+      },
+      {
+        "command": "oijudger.selectStdProgram",
+        "title": "OI Judge: 选择 STD/Select STD",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "oijudger.openStdProgram",
+        "title": "OI Judge: 打开 STD/Open STD",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "oijudger.clearStdProgram",
+        "title": "OI Judge: 清除 STD/Clear STD",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "oijudger.setSampleName",
+        "title": "OI Judge: 设置样例名称/Set Sample Name",
+        "icon": "$(tag)"
       }
     ],
     "viewsContainers": {
@@ -360,6 +384,11 @@
             "Use Chinese UI text."
           ],
           "description": "Controls OI Judge UI language."
+        },
+        "oijudger.setterMode.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When enabled, OI Judge shows problem setter tools such as selecting the standard solution, maintaining sample names, and managing data configuration."
         }
       }
     },
@@ -501,6 +530,26 @@
           "command": "oijudger.openCheckerOutput",
           "when": "view == oijudger.samplesView && (viewItem == sampleChecker || viewItem == sampleWaChecker)",
           "group": "inline@6"
+        },
+        {
+          "command": "oijudger.setSampleName",
+          "when": "view == oijudger.samplesView && oijudger.setterModeEnabled && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker || viewItem == sampleMissing)",
+          "group": "8_setter"
+        },
+        {
+          "command": "oijudger.selectStdProgram",
+          "when": "view == oijudger.samplesView && oijudger.setterModeEnabled && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
+          "group": "4_setter@1"
+        },
+        {
+          "command": "oijudger.openStdProgram",
+          "when": "view == oijudger.samplesView && oijudger.setterModeEnabled && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
+          "group": "4_setter@2"
+        },
+        {
+          "command": "oijudger.clearStdProgram",
+          "when": "view == oijudger.samplesView && oijudger.setterModeEnabled && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker || viewItem == oijudgerProblemPlainChecker)",
+          "group": "4_setter@3"
         }
       ],
       "commandPalette": [

@@ -40,6 +40,7 @@ import {
   addProblemFromSource,
   addProblemSample,
   bindProblemStatement,
+  clearProblemStdProgram,
   createProblem,
   deleteProblemSample,
   ensureProblemsConfig,
@@ -49,8 +50,10 @@ import {
   getProblemSourcePath,
   importLegacyProblem,
   resolveProblemReferencePath,
+  renameProblemSample,
   saveProblemReport,
   setProblemDefaultSource,
+  setProblemStdProgram,
   unbindProblemStatement,
   updateProblemChecker,
   updateProblemCompiler,
@@ -70,8 +73,9 @@ import {
   inferSampleSourceType
 } from './sampleFiles';
 import { SampleTreeProvider } from './sampleTreeProvider';
+import { isSetterModeEnabled, validateSetterSampleName } from './setterMode';
 import { importTestlibToManaged, resolveTestlibForChecker } from './testlibResolver';
-import { PlainCheckerConfig, ProblemConfig } from './types';
+import { PlainCheckerConfig, ProblemConfig, SampleConfig } from './types';
 
 const output = vscode.window.createOutputChannel('OI Judge');
 const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -84,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar.command = 'oijudger.refreshView';
   statusBar.show();
   void updateStatusBar();
+  void updateSetterModeContext();
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('oijudger.samplesView', sampleTreeProvider),
     statusBar,
@@ -433,6 +438,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('oijudger.openCheckerStderr', async (problemArg?: unknown, sampleArg?: unknown) => {
       await openCheckerArtifactCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg));
     }),
+    vscode.commands.registerCommand('oijudger.selectStdProgram', async (problemArg?: unknown) => {
+      await selectStdProgramCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.openStdProgram', async (problemArg?: unknown) => {
+      await openStdProgramCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.clearStdProgram', async (problemArg?: unknown) => {
+      await clearStdProgramCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.setSampleName', async (problemArg?: unknown, sampleArg?: unknown) => {
+      await setSampleNameCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), sampleTreeProvider);
+    }),
     vscode.commands.registerCommand('oijudger.deleteSample', async (problemArg?: unknown, sampleArg?: unknown) => {
       await deleteSampleCommand(readProblemId(problemArg), readSampleId(problemArg, sampleArg), sampleTreeProvider);
     }),
@@ -451,7 +468,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('oijudger.language')) {
+      if (event.affectsConfiguration('oijudger.language') || event.affectsConfiguration('oijudger.setterMode.enabled')) {
+        void updateSetterModeContext();
         sampleTreeProvider.refresh();
       }
     })
@@ -1662,6 +1680,162 @@ async function setDefaultProgramCommand(
   await updateStatusBar(context.problem.id);
 }
 
+async function selectStdProgramCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const sources = context.problem.sources ?? [];
+  const picked = await vscode.window.showQuickPick(
+    [
+      ...sources.map((source) => {
+        const resolvedPath = resolveProblemReferencePath(context.workspaceFolder, source.path);
+        return {
+          label: source.name ?? path.basename(resolvedPath),
+          detail: resolvedPath,
+          path: resolvedPath
+        };
+      }),
+      {
+        label: t('selectStdFromFile'),
+        description: t('selectSourceFile'),
+        path: undefined
+      }
+    ],
+    {
+      title: t('selectStdPrompt'),
+      placeHolder: t('standardSolution')
+    }
+  );
+  if (!picked) {
+    return;
+  }
+
+  let stdPath = picked.path;
+  if (!stdPath) {
+    const uri = await pickSourceFile();
+    stdPath = uri?.fsPath;
+  }
+  if (!stdPath) {
+    return;
+  }
+
+  await setProblemStdProgram(context.workspaceFolder, context.problem.id, stdPath);
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(t('stdSet', { name: path.basename(stdPath) }));
+}
+
+async function openStdProgramCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const stdProgram = context.problem.setter?.stdProgram;
+  if (!stdProgram) {
+    vscode.window.showWarningMessage(t('stdMissingSelectFirst'));
+    return;
+  }
+
+  const stdPath = resolveProblemReferencePath(context.workspaceFolder, stdProgram);
+  if (!(await exists(stdPath))) {
+    const choice = await vscode.window.showWarningMessage(
+      t('stdFileMissing'),
+      t('selectStd'),
+      t('cancel')
+    );
+    if (choice === t('selectStd')) {
+      await selectStdProgramCommand(context.problem.id, sampleTreeProvider);
+    }
+    return;
+  }
+
+  await openFileInEditor(stdPath, t('stdFileMissing'));
+}
+
+async function clearStdProgramCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  await clearProblemStdProgram(context.workspaceFolder, context.problem.id);
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(t('stdCleared'));
+}
+
+async function setSampleNameCommand(
+  problemId: string | undefined,
+  sampleId: number | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = sampleId === undefined
+    ? await getProblemContext(problemId, true)
+    : await getSampleContext(problemId, sampleId);
+  if (!context) {
+    return;
+  }
+
+  let targetSample: SampleConfig | undefined = (context as { sample?: SampleConfig }).sample;
+  if (!targetSample) {
+    const picked = await vscode.window.showQuickPick(
+      context.problem.samples.map((sample) => ({
+        label: sample.name,
+        description: sample.id,
+        sample
+      })),
+      {
+        title: t('setSampleName'),
+        placeHolder: t('sampleName')
+      }
+    );
+    targetSample = picked?.sample;
+  }
+  if (!targetSample) {
+    vscode.window.showWarningMessage(t('sampleNotFound'));
+    return;
+  }
+
+  const name = await vscode.window.showInputBox({
+    title: t('setSampleName'),
+    prompt: t('sampleNameSetterNote'),
+    value: targetSample.name,
+    validateInput: (value) => {
+      if (!value.trim()) {
+        return t('sampleNameCannotBeEmpty');
+      }
+      return validateSetterSampleName(value) ? undefined : t('invalidSampleName');
+    }
+  });
+  if (name === undefined) {
+    return;
+  }
+
+  const result = await renameProblemSample(context.workspaceFolder, context.problem.id, targetSample.index, name);
+  if (!result?.sample) {
+    vscode.window.showWarningMessage(t('sampleNotFound'));
+    return;
+  }
+
+  sampleTreeProvider.refresh();
+  await refreshProblemReportPanel(context.problem.id);
+  vscode.window.showInformationMessage(
+    result.renamed
+      ? t('sampleRenamed', { name: result.sample.name })
+      : t('sampleNameUpdated', { name: result.sample.name })
+  );
+}
+
 async function pickStatementFile(): Promise<vscode.Uri | undefined> {
   const uris = await vscode.window.showOpenDialog({
     title: t('statementFile'),
@@ -2101,6 +2275,10 @@ function getEffectiveJudgeMode(problem: ProblemConfig): 'normal' | 'checker' {
     return problem.judgeMode;
   }
   return problem.checker?.enabled && problem.checker.type !== 'none' ? 'checker' : 'normal';
+}
+
+async function updateSetterModeContext(): Promise<void> {
+  await vscode.commands.executeCommand('setContext', 'oijudger.setterModeEnabled', isSetterModeEnabled());
 }
 
 async function updateStatusBar(problemId: string | undefined = activeProblemId): Promise<void> {

@@ -12,6 +12,7 @@ import {
   resolveProblemReferencePath
 } from './problems';
 import { getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
+import { isSetterModeEnabled } from './setterMode';
 import { CheckerType, JudgeMode, JudgeReport, ProblemConfig, SampleReport, SampleStatus } from './types';
 
 type NodeKind = 'group' | 'problem' | 'info' | 'sample' | 'action';
@@ -22,6 +23,7 @@ type NodeGroup =
   | 'programs'
   | 'limits'
   | 'samples'
+  | 'setter'
   | 'actions'
   | 'sampleActions';
 
@@ -103,6 +105,8 @@ export class SampleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         return createLimitNodes(problem);
       case 'samples':
         return createSampleNodes(workspaceFolder, problem);
+      case 'setter':
+        return createSetterNodes(problem);
       case 'actions':
         return createProblemActionNodes(problem);
       case 'sampleActions':
@@ -202,6 +206,7 @@ function createProblemChildren(workspaceFolder: vscode.WorkspaceFolder, problem:
     createJudgeModeNode(problem),
     createIoModeNode(problem),
     ...createFileIoNodes(problem),
+    ...(isSetterModeEnabled() ? [createStdInfoNode(workspaceFolder, problem)] : []),
     ...(getProblemJudgeMode(problem) === 'checker' ? [createCheckerInfoNode(workspaceFolder, problem)] : []),
     {
       kind: 'group',
@@ -219,6 +224,14 @@ function createProblemChildren(workspaceFolder: vscode.WorkspaceFolder, problem:
       group: 'samples',
       problemId: problem.id
     },
+    ...(isSetterModeEnabled() ? [{
+      kind: 'group' as const,
+      label: t('setterMode'),
+      icon: new vscode.ThemeIcon('person'),
+      collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+      group: 'setter' as const,
+      problemId: problem.id
+    }] : []),
     {
       kind: 'group',
       label: t('actions'),
@@ -476,6 +489,9 @@ function createSampleActionNodes(
   if (hasCheckerOutput) {
     nodes.push(sampleActionNode(t('checkerOutput'), 'oijudger.openCheckerOutput', 'output', problemId, sampleId));
   }
+  if (isSetterModeEnabled()) {
+    nodes.push(sampleActionNode(t('setSampleName'), 'oijudger.setSampleName', 'tag', problemId, sampleId));
+  }
 
   return nodes;
 }
@@ -507,6 +523,40 @@ function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
     actionNode(t('batchAddSamples'), 'oijudger.batchAddSamples', 'folder-opened', problem.id),
     actionNode(t('openResultPanel'), 'oijudger.openProblemResultPanel', 'layout-panel', problem.id)
   ];
+}
+
+function createSetterNodes(problem: ProblemConfig): TreeNode[] {
+  return [
+    actionNode(t('selectStd'), 'oijudger.selectStdProgram', 'file-code', problem.id),
+    actionNode(t('openStd'), 'oijudger.openStdProgram', 'go-to-file', problem.id),
+    actionNode(t('clearStd'), 'oijudger.clearStdProgram', 'clear-all', problem.id),
+    actionNode(t('setSampleName'), 'oijudger.setSampleName', 'tag', problem.id)
+  ];
+}
+
+function createStdInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem: ProblemConfig): TreeNode {
+  const stdPath = problem.setter?.stdProgram
+    ? resolveProblemReferencePath(workspaceFolder, problem.setter.stdProgram)
+    : undefined;
+  const missing = Boolean(stdPath && !existsSync(stdPath));
+  const label = stdPath
+    ? `${t('standardSolution')}: ${path.basename(stdPath)}`
+    : `${t('standardSolution')}: ${t('stdNotSet')}`;
+  return {
+    kind: 'info',
+    label,
+    description: missing ? t('statusMissing') : undefined,
+    tooltip: stdPath ? `${stdPath}\n${t('stdTooltip')}` : t('stdTooltip'),
+    icon: missing
+      ? new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'))
+      : new vscode.ThemeIcon('file-code'),
+    problemId: problem.id,
+    command: {
+      command: stdPath ? 'oijudger.openStdProgram' : 'oijudger.selectStdProgram',
+      title: stdPath ? t('openStd') : t('selectStd'),
+      arguments: [problem.id]
+    }
+  };
 }
 
 function createCheckerInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem: ProblemConfig): TreeNode {

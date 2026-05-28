@@ -8,6 +8,7 @@ import {
   normalizeFileIoConfig,
   normalizeIoMode,
   normalizeJudgeMode,
+  normalizeSetterConfig,
   normalizeStackConfig
 } from './configNormalize';
 import {
@@ -24,6 +25,7 @@ export {
   normalizeFileIoConfig,
   normalizeIoMode,
   normalizeJudgeMode,
+  normalizeSetterConfig,
   normalizeStackConfig
 } from './configNormalize';
 export {
@@ -290,6 +292,7 @@ function normalizeConfig(config: OITestConfig): OITestConfig {
     ioMode: normalizeIoMode(config.ioMode),
     fileIo: normalizeFileIoConfig(config.fileIo),
     checker: normalizeCheckerConfig(config.checker),
+    setter: normalizeSetterConfig(config.setter),
     samples: config.samples ?? []
   };
 }

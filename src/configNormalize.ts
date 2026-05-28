@@ -1,4 +1,5 @@
-import { CheckerConfig, FileIoConfig, IoMode, JudgeMode, StackConfig } from './types';
+import { CheckerConfig, FileIoConfig, IoMode, JudgeMode, SetterConfig, StackConfig } from './types';
+import { normalizeSetterConfig as normalizeSetterConfigValue } from './setterMode';
 
 export function normalizeStackConfig(stack: StackConfig | undefined): StackConfig {
   return {
@@ -50,4 +51,8 @@ export function normalizeFileIoConfig(fileIo: FileIoConfig | undefined): FileIoC
     inputFileName: fileIo?.inputFileName || 'input.txt',
     outputFileName: fileIo?.outputFileName || 'output.txt'
   };
+}
+
+export function normalizeSetterConfig(setter: SetterConfig | undefined): SetterConfig {
+  return normalizeSetterConfigValue(setter);
 }

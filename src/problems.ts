@@ -14,6 +14,7 @@ import {
   normalizeFileIoConfig,
   normalizeIoMode,
   normalizeJudgeMode,
+  normalizeSetterConfig,
   normalizeStackConfig,
   normalizeSampleInternalId,
   resolveSampleIndex,
@@ -28,6 +29,10 @@ import {
   isUnderPath,
   resolveSamplePath
 } from './sampleFiles';
+import {
+  removeSetterDataCaseForSample,
+  upsertSetterDataCaseForSample
+} from './setterMode';
 import {
   JudgeReport,
   OITestConfig,
@@ -403,6 +408,56 @@ export async function setProblemDefaultSource(
   });
 }
 
+export async function setProblemStdProgram(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  stdPath: string
+): Promise<ProblemConfig | undefined> {
+  return updateProblem(workspaceFolder, problemId, (problem) => {
+    const source = createProblemSource(workspaceFolder, stdPath);
+    problem.setter = normalizeSetterConfig({
+      ...problem.setter,
+      stdProgram: source.path
+    });
+  });
+}
+
+export async function clearProblemStdProgram(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string
+): Promise<ProblemConfig | undefined> {
+  return updateProblem(workspaceFolder, problemId, (problem) => {
+    const setter = normalizeSetterConfig(problem.setter);
+    delete setter.stdProgram;
+    problem.setter = setter;
+  });
+}
+
+export async function renameProblemSample(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  sampleId: number,
+  desiredName: string
+): Promise<{ problem?: ProblemConfig; sample?: SampleConfig; renamed?: boolean } | undefined> {
+  const problems = await ensureProblemsConfig(workspaceFolder);
+  const problem = findProblem(problems, problemId);
+  const sample = problem?.samples.find((entry) => entry.index === sampleId);
+  if (!problem || !sample) {
+    return undefined;
+  }
+
+  const originalName = desiredName.trim();
+  const finalName = uniqueSampleName(problem.samples.filter((entry) => entry.id !== sample.id), originalName);
+  sample.name = finalName;
+  problem.setter = upsertSetterDataCaseForSample(problem.setter, sample);
+  await writeProblemsConfig(workspaceFolder, problems);
+  return {
+    problem,
+    sample,
+    renamed: finalName !== originalName
+  };
+}
+
 export async function deleteProblemSample(
   workspaceFolder: vscode.WorkspaceFolder,
   problemId: string,
@@ -416,6 +471,7 @@ export async function deleteProblemSample(
   }
 
   const [sample] = problem.samples.splice(sampleIndex, 1);
+  problem.setter = removeSetterDataCaseForSample(problem.setter, sample);
   await writeProblemsConfig(workspaceFolder, problems);
 
   const cleanupErrors: string[] = [];
@@ -524,6 +580,7 @@ function normalizeProblem(workspaceFolder: vscode.WorkspaceFolder, problem: Prob
     ioMode: normalizeIoMode(problem.ioMode),
     fileIo: normalizeFileIoConfig(problem.fileIo),
     checker: normalizeCheckerConfig(problem.checker),
+    setter: normalizeSetterConfig(problem.setter),
     samples: (problem.samples ?? []).map((sample, index) => normalizeProblemSample(workspaceFolder, sample, id, index + 1)),
     standard: problem.standard ?? getStandardFromArgs((problem.compiler ?? defaults.compiler).args),
     source: problem.source,
