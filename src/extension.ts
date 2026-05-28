@@ -18,7 +18,13 @@ import {
 import { ensureCompilerConfigured, findCompiler, pickCompilerPath, selectCompiler } from './compilerDetection';
 import { t } from './i18n';
 import { runAllSamples } from './judge';
-import { isNumericPlainCheckerToken, resolvePlainCheckerOptions } from './plainCheckerParser';
+import {
+  PlainCheckerProtocolValidationIssue,
+  resolvePlainCheckerOptions,
+  validatePlainCheckerProtocol,
+  validatePlainCheckerToken
+} from './plainCheckerParser';
+import { validateFileIoName as validateFileIoNameValue } from './fileIo';
 import { explainRuntimeError, renderRuntimeErrorExplanation } from './runtimeErrorExplainer';
 import {
   openLastReport,
@@ -1117,19 +1123,7 @@ async function readFileIoNames(
 }
 
 function validateFileIoName(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (
-    trimmed.length === 0 ||
-    trimmed === '.' ||
-    trimmed === '..' ||
-    path.isAbsolute(trimmed) ||
-    /[\\/]/u.test(trimmed) ||
-    trimmed.includes('..') ||
-    !/^[A-Za-z0-9_.-]+$/u.test(trimmed)
-  ) {
-    return t('invalidFileIoName');
-  }
-  return undefined;
+  return validateFileIoNameValue(value).ok ? undefined : t('invalidFileIoName');
 }
 
 async function setCheckerCommand(
@@ -1332,28 +1326,27 @@ async function readPlainCheckerProtocol(
 }
 
 function validatePlainAcceptedToken(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return t('acceptedTokenEmpty');
-  }
-  if (isNumericPlainCheckerToken(trimmed)) {
-    return t('plainTokensCannotBeNumeric');
-  }
-  return undefined;
+  const issue = validatePlainCheckerToken(value, 'accepted');
+  return issue ? plainProtocolValidationMessage(issue) : undefined;
 }
 
 function validatePlainWrongAnswerToken(value: string, acceptedToken: string): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return t('wrongAnswerTokenEmpty');
+  const result = validatePlainCheckerProtocol({ acceptedToken, wrongAnswerToken: value });
+  return result.ok ? undefined : plainProtocolValidationMessage(result.issue);
+}
+
+function plainProtocolValidationMessage(issue: PlainCheckerProtocolValidationIssue): string {
+  switch (issue) {
+    case 'acceptedTokenEmpty':
+      return t('acceptedTokenEmpty');
+    case 'wrongAnswerTokenEmpty':
+      return t('wrongAnswerTokenEmpty');
+    case 'tokensSame':
+      return t('plainTokensCannotBeSame');
+    case 'acceptedTokenNumeric':
+    case 'wrongAnswerTokenNumeric':
+      return t('plainTokensCannotBeNumeric');
   }
-  if (trimmed === acceptedToken.trim()) {
-    return t('plainTokensCannotBeSame');
-  }
-  if (isNumericPlainCheckerToken(trimmed)) {
-    return t('plainTokensCannotBeNumeric');
-  }
-  return undefined;
 }
 
 async function openCheckerCommand(problemId: string | undefined): Promise<void> {

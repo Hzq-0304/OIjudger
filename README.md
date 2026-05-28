@@ -351,6 +351,7 @@ From the project root:
 ```powershell
 npm install
 npm run compile
+npm test
 npm pack --dry-run
 ```
 

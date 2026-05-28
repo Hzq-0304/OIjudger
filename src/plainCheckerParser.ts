@@ -12,6 +12,13 @@ export type PlainCheckerParseOptions = {
   wrongAnswerToken: string;
 };
 
+export type PlainCheckerProtocolValidationIssue =
+  | 'acceptedTokenEmpty'
+  | 'wrongAnswerTokenEmpty'
+  | 'tokensSame'
+  | 'acceptedTokenNumeric'
+  | 'wrongAnswerTokenNumeric';
+
 const defaultOptions: PlainCheckerParseOptions = {
   verdictPosition: 'lastLine',
   acceptedToken: 'AC',
@@ -90,6 +97,39 @@ export function resolvePlainCheckerOptions(
     acceptedToken: options.acceptedToken?.trim() || defaultOptions.acceptedToken,
     wrongAnswerToken: options.wrongAnswerToken?.trim() || defaultOptions.wrongAnswerToken
   };
+}
+
+export function validatePlainCheckerProtocol(
+  options: Partial<Pick<PlainCheckerParseOptions, 'acceptedToken' | 'wrongAnswerToken'>>
+): { ok: true } | { ok: false; issue: PlainCheckerProtocolValidationIssue } {
+  const acceptedIssue = validatePlainCheckerToken(options.acceptedToken ?? '', 'accepted');
+  if (acceptedIssue) {
+    return { ok: false, issue: acceptedIssue };
+  }
+  const wrongAnswerIssue = validatePlainCheckerToken(options.wrongAnswerToken ?? '', 'wrongAnswer');
+  if (wrongAnswerIssue) {
+    return { ok: false, issue: wrongAnswerIssue };
+  }
+  const acceptedToken = options.acceptedToken?.trim() ?? '';
+  const wrongAnswerToken = options.wrongAnswerToken?.trim() ?? '';
+  if (acceptedToken === wrongAnswerToken) {
+    return { ok: false, issue: 'tokensSame' };
+  }
+  return { ok: true };
+}
+
+export function validatePlainCheckerToken(
+  value: string,
+  tokenKind: 'accepted' | 'wrongAnswer'
+): PlainCheckerProtocolValidationIssue | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return tokenKind === 'accepted' ? 'acceptedTokenEmpty' : 'wrongAnswerTokenEmpty';
+  }
+  if (isNumericPlainCheckerToken(trimmed)) {
+    return tokenKind === 'accepted' ? 'acceptedTokenNumeric' : 'wrongAnswerTokenNumeric';
+  }
+  return undefined;
 }
 
 export function isNumericPlainCheckerToken(value: string): boolean {

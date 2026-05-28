@@ -5,6 +5,7 @@ import { runProcess } from './runner';
 import { getLocale } from './i18n';
 import { explainRuntimeError } from './runtimeErrorExplainer';
 import { CheckerSampleReport } from './types';
+import { mergeCheckerOutput } from './checkerOutput';
 
 export type CheckerRunInput = {
   checkerSource: string;
@@ -353,17 +354,7 @@ function formatPlainInvalidMessage(
 }
 
 async function writeCheckerOutput(outputPath: string, stdout: string, stderr: string): Promise<void> {
-  await fs.writeFile(outputPath, formatCheckerOutput(stdout, stderr), 'utf8');
-}
-
-function formatCheckerOutput(stdout: string, stderr: string): string {
-  if (stdout.trim() && stderr.trim()) {
-    return `[stdout]\n${stdout.trimEnd()}\n\n[stderr]\n${stderr.trimEnd()}\n`;
-  }
-  if (stdout) {
-    return stdout;
-  }
-  return stderr;
+  await fs.writeFile(outputPath, mergeCheckerOutput(stdout, stderr), 'utf8');
 }
 
 function explainCheckerAbnormalExit(
