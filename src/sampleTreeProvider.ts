@@ -12,7 +12,7 @@ import {
   resolveProblemReferencePath
 } from './problems';
 import { getSampleFileStatus, inferSampleSourceType } from './sampleFiles';
-import { JudgeReport, ProblemConfig, SampleReport, SampleStatus } from './types';
+import { JudgeMode, JudgeReport, ProblemConfig, SampleReport, SampleStatus } from './types';
 
 type NodeKind = 'group' | 'problem' | 'info' | 'sample' | 'action';
 type NodeGroup =
@@ -38,6 +38,7 @@ type TreeNode = {
   sampleId?: number;
   sampleStatus?: SampleStatus | 'Not Run';
   hasCheckerOutput?: boolean;
+  problemJudgeMode?: JudgeMode;
 };
 
 export class SampleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
@@ -58,14 +59,7 @@ export class SampleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.tooltip = element.tooltip;
     item.iconPath = element.icon;
     item.command = element.command;
-    item.contextValue =
-      element.kind === 'sample'
-        ? element.sampleStatus === 'Missing'
-          ? 'sampleMissing'
-          : element.sampleStatus === 'WA'
-            ? 'sampleWa'
-            : 'sample'
-        : `oijudger${capitalize(element.kind)}`;
+    item.contextValue = getContextValue(element);
     return item;
   }
 
@@ -146,7 +140,8 @@ function createProblemNode(problem: ProblemConfig): TreeNode {
     tooltip: defaultSource ?? t('noProgramSet'),
     icon: new vscode.ThemeIcon('symbol-file'),
     collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-    problemId: problem.id
+    problemId: problem.id,
+    problemJudgeMode: getProblemJudgeMode(problem)
   };
 }
 
@@ -184,7 +179,8 @@ function createProblemChildren(workspaceFolder: vscode.WorkspaceFolder, problem:
     infoNode(t('defaultProgramLine', { program: getDefaultProblemSource(problem) ? path.basename(getDefaultProblemSource(problem) ?? '') : t('noProgramSet') }), 'file-code'),
     infoNode(t('compilerLine', { compiler: path.basename(problem.compiler.command || 'g++') }), 'terminal'),
     infoNode(t('standardLine', { standard: problem.standard }), 'settings'),
-    createCheckerInfoNode(workspaceFolder, problem),
+    createJudgeModeNode(problem),
+    ...(getProblemJudgeMode(problem) === 'checker' ? [createCheckerInfoNode(workspaceFolder, problem)] : []),
     {
       kind: 'group',
       label: t('limits'),
@@ -431,12 +427,18 @@ function createSampleActionNodes(
 }
 
 function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
+  const checkerActions = getProblemJudgeMode(problem) === 'checker'
+    ? [
+      actionNode(t('setChecker'), 'oijudger.setChecker', 'verified', problem.id),
+      actionNode(t('clearChecker'), 'oijudger.clearChecker', 'clear-all', problem.id),
+      actionNode(t('openChecker'), 'oijudger.openChecker', 'go-to-file', problem.id),
+      actionNode(t('importTestlib'), 'oijudger.importTestlib', 'cloud-download', problem.id),
+      actionNode(t('openTestlib'), 'oijudger.openTestlib', 'book', problem.id)
+    ]
+    : [];
+
   return [
-    actionNode(t('setChecker'), 'oijudger.setChecker', 'verified', problem.id),
-    actionNode(t('clearChecker'), 'oijudger.clearChecker', 'clear-all', problem.id),
-    actionNode(t('openChecker'), 'oijudger.openChecker', 'go-to-file', problem.id),
-    actionNode(t('importTestlib'), 'oijudger.importTestlib', 'cloud-download', problem.id),
-    actionNode(t('openTestlib'), 'oijudger.openTestlib', 'book', problem.id),
+    ...checkerActions,
     actionNode(t('bindStatement'), 'oijudger.bindStatement', 'link', problem.id),
     actionNode(t('openStatement'), 'oijudger.openStatement', 'book', problem.id),
     actionNode(t('unbindStatement'), 'oijudger.unbindStatement', 'debug-disconnect', problem.id),
@@ -456,7 +458,7 @@ function createProblemActionNodes(problem: ProblemConfig): TreeNode[] {
 function createCheckerInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem: ProblemConfig): TreeNode {
   const checker = problem.checker;
   if (!checker?.enabled || checker.type === 'none') {
-    return infoNode(`${t('checker')}: ${t('normalCompare')}`, 'check');
+    return infoNode(`${t('checker')}: ${t('checkerNotSet')}`, 'circle-outline');
   }
 
   const checkerPath = checker.source
@@ -473,6 +475,23 @@ function createCheckerInfoNode(workspaceFolder: vscode.WorkspaceFolder, problem:
     icon: missing
       ? new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'))
       : new vscode.ThemeIcon('verified')
+  };
+}
+
+function createJudgeModeNode(problem: ProblemConfig): TreeNode {
+  const mode = getProblemJudgeMode(problem);
+  const label = mode === 'checker' ? t('customChecker') : t('normalTextCompare');
+  return {
+    kind: 'info',
+    label: `${t('judgeMode')}: ${label}`,
+    tooltip: mode === 'checker' ? t('checkerOptionsOnlyInCustomMode') : t('normalCompareDescription'),
+    icon: new vscode.ThemeIcon(mode === 'checker' ? 'verified' : 'diff'),
+    problemId: problem.id,
+    command: {
+      command: 'oijudger.setJudgeMode',
+      title: t('setJudgeMode'),
+      arguments: [problem.id]
+    }
   };
 }
 
@@ -635,4 +654,25 @@ function statementIcon(type: string): string {
 
 function capitalize(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function getProblemJudgeMode(problem: ProblemConfig): JudgeMode {
+  return problem.judgeMode ?? (problem.checker?.enabled && problem.checker.type !== 'none' ? 'checker' : 'normal');
+}
+
+function getContextValue(element: TreeNode): string {
+  if (element.kind === 'sample') {
+    if (element.hasCheckerOutput && element.sampleStatus !== 'Missing') {
+      return element.sampleStatus === 'WA' ? 'sampleWaChecker' : 'sampleChecker';
+    }
+    return element.sampleStatus === 'Missing'
+      ? 'sampleMissing'
+      : element.sampleStatus === 'WA'
+        ? 'sampleWa'
+        : 'sample';
+  }
+  if (element.kind === 'problem') {
+    return element.problemJudgeMode === 'checker' ? 'oijudgerProblemChecker' : 'oijudgerProblemNormal';
+  }
+  return `oijudger${capitalize(element.kind)}`;
 }

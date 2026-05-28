@@ -2,6 +2,7 @@ import type { RuntimeErrorSummary } from './runtimeErrorExplainer';
 
 export type SampleSourceType = 'managed' | 'external';
 export type CheckerType = 'none' | 'testlib' | 'plain';
+export type JudgeMode = 'normal' | 'checker';
 export type TestlibMode = 'auto' | 'managed' | 'custom';
 
 export type ProblemStatementType = 'markdown' | 'pdf' | 'text' | 'unknown';
@@ -59,6 +60,7 @@ export type OITestConfig = {
     memoryMb: number;
   };
   stack?: StackConfig;
+  judgeMode?: JudgeMode;
   checker?: CheckerConfig;
   samples: SampleConfig[];
 };
@@ -186,7 +188,8 @@ export type JudgeReport = {
   totalTimeMs?: number;
   timeLimitMs: number;
   memoryLimitMb: number;
-  judgeMode?: 'normal' | 'testlib' | 'plain';
+  judgeMode?: JudgeMode | 'testlib' | 'plain';
+  checkerType?: Exclude<CheckerType, 'none'>;
   checker?: CheckerConfig;
   summary: {
     accepted: number;

@@ -35,6 +35,7 @@
     "onCommand:oijudger.setProblemTimeLimit",
     "onCommand:oijudger.setProblemMemoryLimit",
     "onCommand:oijudger.setProblemStackSize",
+    "onCommand:oijudger.setJudgeMode",
     "onCommand:oijudger.setProblemStandard",
     "onCommand:oijudger.selectProblemCompiler",
     "onCommand:oijudger.bindStatement",
@@ -185,6 +186,11 @@
         "command": "oijudger.setProblemStackSize",
         "title": "OIjudger: Set Problem Stack Size",
         "icon": "$(layers)"
+      },
+      {
+        "command": "oijudger.setJudgeMode",
+        "title": "OIjudger: 设置评测方式/Set Judge Mode",
+        "icon": "$(diff)"
       },
       {
         "command": "oijudger.setProblemStandard",
@@ -359,103 +365,108 @@
       ],
       "view/item/context": [
         {
+          "command": "oijudger.setJudgeMode",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
+          "group": "0_judge"
+        },
+        {
           "command": "oijudger.bindStatement",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "1_statement"
         },
         {
           "command": "oijudger.openStatement",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "1_statement"
         },
         {
           "command": "oijudger.unbindStatement",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "1_statement"
         },
         {
           "command": "oijudger.addProgramToProblem",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "2_program"
         },
         {
           "command": "oijudger.setDefaultProgram",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "2_program"
         },
         {
           "command": "oijudger.batchAddSamples",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "2_samples"
         },
         {
           "command": "oijudger.runSamplesWithProgram",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "3_run"
         },
         {
           "command": "oijudger.runProblemSamples",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && (viewItem == oijudgerProblemNormal || viewItem == oijudgerProblemChecker)",
           "group": "3_run"
         },
         {
           "command": "oijudger.openSampleInput",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa || viewItem == sampleMissing)",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker || viewItem == sampleMissing)",
           "group": "inline@1"
         },
         {
           "command": "oijudger.openSampleAnswer",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa || viewItem == sampleMissing)",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker || viewItem == sampleMissing)",
           "group": "inline@2"
         },
         {
           "command": "oijudger.openSampleUserOutput",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa)",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker)",
           "group": "inline@3"
         },
         {
           "command": "oijudger.openSampleDiff",
-          "when": "view == oijudger.samplesView && viewItem == sampleWa",
+          "when": "view == oijudger.samplesView && (viewItem == sampleWa || viewItem == sampleWaChecker)",
           "group": "inline@5"
         },
         {
           "command": "oijudger.deleteSample",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa || viewItem == sampleMissing)",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker || viewItem == sampleMissing)",
           "group": "inline@9"
         },
         {
           "command": "oijudger.deleteSample",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa || viewItem == sampleMissing)",
+          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleChecker || viewItem == sampleWa || viewItem == sampleWaChecker || viewItem == sampleMissing)",
           "group": "9_delete"
         },
         {
           "command": "oijudger.setChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
           "group": "3_checker@1"
         },
         {
           "command": "oijudger.clearChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
           "group": "3_checker@2"
         },
         {
           "command": "oijudger.openChecker",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
           "group": "3_checker@3"
         },
         {
           "command": "oijudger.importTestlib",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
           "group": "3_checker@4"
         },
         {
           "command": "oijudger.openTestlib",
-          "when": "view == oijudger.samplesView && viewItem == oijudgerProblem",
+          "when": "view == oijudger.samplesView && viewItem == oijudgerProblemChecker",
           "group": "3_checker@5"
         },
         {
           "command": "oijudger.openCheckerOutput",
-          "when": "view == oijudger.samplesView && (viewItem == sample || viewItem == sampleWa)",
+          "when": "view == oijudger.samplesView && (viewItem == sampleChecker || viewItem == sampleWaChecker)",
           "group": "inline@6"
         }
       ],

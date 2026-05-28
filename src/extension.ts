@@ -47,6 +47,7 @@ import {
   unbindProblemStatement,
   updateProblemChecker,
   updateProblemCompiler,
+  updateProblemJudgeMode,
   updateProblemLimits,
   updateProblemStack,
   updateProblemStandard
@@ -332,6 +333,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('oijudger.setProblemStackSize', async (problemArg?: unknown) => {
       await setStackSizeCommand(readProblemId(problemArg), sampleTreeProvider);
+    }),
+    vscode.commands.registerCommand('oijudger.setJudgeMode', async (problemArg?: unknown) => {
+      await setJudgeModeCommand(readProblemId(problemArg), sampleTreeProvider);
     }),
     vscode.commands.registerCommand('oijudger.setChecker', async (problemArg?: unknown) => {
       await setCheckerCommand(context, readProblemId(problemArg), sampleTreeProvider);
@@ -986,6 +990,36 @@ async function setStackSizeCommand(
   }
 }
 
+async function setJudgeModeCommand(
+  problemId: string | undefined,
+  sampleTreeProvider: SampleTreeProvider
+): Promise<void> {
+  const context = await getProblemContext(problemId, true);
+  if (!context) {
+    return;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    [
+      { label: t('normalTextCompare'), mode: 'normal' as const },
+      { label: t('customChecker'), mode: 'checker' as const }
+    ],
+    {
+      title: t('setJudgeMode'),
+      placeHolder: t('judgeMode')
+    }
+  );
+  if (!picked) {
+    return;
+  }
+
+  await updateProblemJudgeMode(context.workspaceFolder, context.problem.id, picked.mode);
+  sampleTreeProvider.refresh();
+  vscode.window.showInformationMessage(
+    picked.mode === 'checker' ? t('switchedToCustomChecker') : t('switchedToNormalCompare')
+  );
+}
+
 async function setCheckerCommand(
   extensionContext: vscode.ExtensionContext,
   problemId: string | undefined,
@@ -994,6 +1028,20 @@ async function setCheckerCommand(
   const context = await getProblemContext(problemId, true);
   if (!context) {
     return;
+  }
+
+  if (getEffectiveJudgeMode(context.problem) !== 'checker') {
+    const confirmed = await vscode.window.showWarningMessage(
+      t('switchToCheckerPrompt'),
+      { modal: true },
+      t('switchAndSet'),
+      t('cancel')
+    );
+    if (confirmed !== t('switchAndSet')) {
+      return;
+    }
+    await updateProblemJudgeMode(context.workspaceFolder, context.problem.id, 'checker');
+    context.problem.judgeMode = 'checker';
   }
 
   const picked = await vscode.window.showQuickPick(
@@ -1827,6 +1875,13 @@ function readSampleId(problemArg: unknown, sampleArg: unknown): number | undefin
     return typeof sampleId === 'number' ? sampleId : undefined;
   }
   return undefined;
+}
+
+function getEffectiveJudgeMode(problem: ProblemConfig): 'normal' | 'checker' {
+  if (problem.judgeMode === 'normal' || problem.judgeMode === 'checker') {
+    return problem.judgeMode;
+  }
+  return problem.checker?.enabled && problem.checker.type !== 'none' ? 'checker' : 'normal';
 }
 
 async function updateStatusBar(problemId: string | undefined = activeProblemId): Promise<void> {

@@ -11,6 +11,7 @@ import {
   getNextSampleIndex,
   getSampleDisplayNameFromInput,
   normalizeCheckerConfig,
+  normalizeJudgeMode,
   normalizeStackConfig,
   normalizeSampleInternalId,
   resolveSampleIndex,
@@ -305,6 +306,19 @@ export async function updateProblemChecker(
   });
 }
 
+export async function updateProblemJudgeMode(
+  workspaceFolder: vscode.WorkspaceFolder,
+  problemId: string,
+  judgeMode: ProblemConfig['judgeMode']
+): Promise<ProblemConfig | undefined> {
+  return updateProblem(workspaceFolder, problemId, (problem) => {
+    problem.judgeMode = judgeMode ?? 'normal';
+    if (problem.judgeMode === 'checker' && !problem.checker) {
+      problem.checker = { enabled: false, type: 'none' };
+    }
+  });
+}
+
 export async function getProblem(
   workspaceFolder: vscode.WorkspaceFolder,
   problemId: string
@@ -482,6 +496,7 @@ function normalizeProblem(workspaceFolder: vscode.WorkspaceFolder, problem: Prob
       ...problem.limits
     },
     stack: normalizeStackConfig(problem.stack),
+    judgeMode: normalizeJudgeMode(problem.judgeMode, problem.checker),
     checker: normalizeCheckerConfig(problem.checker),
     samples: (problem.samples ?? []).map((sample, index) => normalizeProblemSample(workspaceFolder, sample, id, index + 1)),
     standard: problem.standard ?? getStandardFromArgs((problem.compiler ?? defaults.compiler).args),

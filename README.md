@@ -115,6 +115,20 @@ Runtime Error Explanation:
   - `SIGABRT`: Aborted
 - The explanation is a diagnostic hint, not a final proof. Always combine it with the input file, stderr, the reproduction command, and a debugger when needed.
 
+Judge Mode:
+
+- OIjudger supports two judge modes for each problem:
+  - Normal text compare
+  - Custom checker
+- Normal text compare directly compares the user program stdout with the expected output file. This is the default mode and fits most ordinary OI problems.
+- In normal text compare mode, Checker-related actions are hidden from the problem Actions section to keep the sidebar compact.
+- Click the Judge Mode node under a problem to switch between normal text compare and custom checker.
+- Custom checker mode enables Checker actions and supports:
+  - Testlib Checker
+  - Plain Checker
+- If you run `OIjudger: Set Checker` while a problem is still in normal text compare mode, OIjudger asks whether to switch to custom checker first.
+- Switching back to normal text compare does not delete the saved checker configuration, so you can switch back later without reselecting the checker.
+
 Testlib Checker:
 
 - OIjudger supports first-version testlib-style checkers for per-problem judging.

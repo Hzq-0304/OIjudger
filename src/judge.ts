@@ -57,7 +57,17 @@ export async function runAllSamples(
   const samples: SampleReport[] = [];
   const problemId = (config as { id?: string }).id;
   const runCwd = path.dirname(sourcePath);
-  const checkerCompile = problemId && config.checker?.enabled && config.checker.type !== 'none'
+  const judgeMode = getJudgeMode(config);
+  const activeChecker = judgeMode === 'checker' && config.checker?.enabled && config.checker.type !== 'none'
+    ? config.checker
+    : undefined;
+  output.appendLine(`Judge mode: ${judgeMode === 'checker' ? 'custom checker' : 'normal text compare'}`);
+  if (activeChecker) {
+    output.appendLine(`Checker type: ${activeChecker.type}`);
+  }
+  output.appendLine('');
+
+  const checkerCompile = problemId && activeChecker
     ? await compileChecker(workspaceFolder, problemId, config, output)
     : undefined;
   const checkerContext = checkerCompile?.ok
@@ -67,11 +77,11 @@ export async function runAllSamples(
         exe: checkerCompile.exe,
         compilerBin: checkerCompile.compilerBin,
         testlibPath: checkerCompile.testlib?.testlibPath,
-        timeLimitMs: getCheckerTimeLimitMs(config.checker)
+        timeLimitMs: getCheckerTimeLimitMs(activeChecker)
       }
     : undefined;
 
-  if (config.checker?.enabled && config.checker.type !== 'none' && checkerCompile && !checkerCompile.ok) {
+  if (activeChecker && checkerCompile && !checkerCompile.ok) {
     for (const sample of config.samples) {
       samples.push(createCheckerErrorSampleReport(workspaceFolder, sourcePath, compile.executablePath, runCwd, sample, problemId, checkerCompile));
     }
@@ -109,8 +119,9 @@ export async function runAllSamples(
       stack: compile.stack
     },
     totalTimeMs,
-    judgeMode: config.checker?.enabled && config.checker.type !== 'none' ? config.checker.type : 'normal',
-    checker: config.checker?.enabled ? config.checker : undefined,
+    judgeMode,
+    checkerType: activeChecker?.type === 'testlib' || activeChecker?.type === 'plain' ? activeChecker.type : undefined,
+    checker: activeChecker,
     timeLimitMs: config.limits.timeMs,
     memoryLimitMb: config.limits.memoryMb,
     summary: {
@@ -148,6 +159,13 @@ export async function runAllSamples(
   }
 
   return report;
+}
+
+function getJudgeMode(config: OITestConfig): 'normal' | 'checker' {
+  if (config.judgeMode === 'normal' || config.judgeMode === 'checker') {
+    return config.judgeMode;
+  }
+  return config.checker?.enabled && config.checker.type !== 'none' ? 'checker' : 'normal';
 }
 
 async function judgeSample(

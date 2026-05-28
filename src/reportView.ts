@@ -163,7 +163,7 @@ function renderReportBody(
       <div><span>${escapeHtml(t('statement'))}</span><strong>${escapeHtml(problem?.statement ? basename(problem.statement.path) : t('noStatementBound'))}</strong></div>
       <div><span>${escapeHtml(t('program'))}</span><strong>${escapeHtml(report.sourceName ?? basename(report.source || (problem ? getDefaultProblemSource(problem) : '') || ''))}</strong></div>
       <div><span>${escapeHtml(t('judgeMode'))}</span><strong>${escapeHtml(formatJudgeMode(report))}</strong></div>
-      ${report.checker?.enabled && report.checker.source ? `<div><span>${escapeHtml(t('checker'))}</span><strong>${escapeHtml(basename(report.checker.source))}</strong></div>` : ''}
+      ${isCheckerReport(report) ? `<div><span>${escapeHtml(t('checker'))}</span><strong>${escapeHtml(formatCheckerLine(report))}</strong></div>` : ''}
       <div><span>${escapeHtml(t('accepted'))}</span><strong>${report.summary.accepted}/${report.summary.total}</strong></div>
       ${report.summary.wrongAnswer !== undefined ? `<div><span>${escapeHtml(t('statusWA'))}</span><strong>${report.summary.wrongAnswer}</strong></div>` : ''}
       ${report.summary.scored ? `<div><span>${escapeHtml(t('scoredSamples'))}</span><strong>${report.summary.scored}</strong></div>` : ''}
@@ -177,7 +177,7 @@ function renderReportBody(
       <div><span>${escapeHtml(t('stack'))}</span><strong>${escapeHtml(formatStack(report))}</strong></div>
       <div><span>${escapeHtml(t('generated'))}</span><strong>${escapeHtml(new Date(report.generatedAt).toLocaleString())}</strong></div>
     </section>
-    ${report.judgeMode === 'plain' ? `<section><h2>${escapeHtml(t('plainCheckerMode'))}</h2><p>${escapeHtml(t('plainCheckerProtocol'))}</p></section>` : ''}
+    ${getReportCheckerType(report) === 'plain' ? `<section><h2>${escapeHtml(t('plainCheckerMode'))}</h2><p>${escapeHtml(t('plainCheckerProtocol'))}</p></section>` : ''}
     <section>
       <h2>${escapeHtml(t('source'))}</h2>
       <p class="path">${escapeHtml(report.source)}</p>
@@ -185,7 +185,7 @@ function renderReportBody(
     <section>
       <h2>${escapeHtml(t('samples'))}</h2>
       <div class="samples">
-        ${report.samples.map((sample) => renderSampleCard(workspaceFolder, sample, problemId)).join('')}
+        ${report.samples.map((sample) => renderSampleCard(workspaceFolder, report, sample, problemId)).join('')}
       </div>
     </section>`;
 }
@@ -199,13 +199,10 @@ function formatStack(report: JudgeReport): string {
 }
 
 function formatJudgeMode(report: JudgeReport): string {
-  if (report.judgeMode === 'testlib') {
-    return t('testlibCheckerMode');
+  if (isCheckerReport(report)) {
+    return t('customChecker');
   }
-  if (report.judgeMode === 'plain') {
-    return t('plainCheckerMode');
-  }
-  return t('normalCompare');
+  return t('normalTextCompare');
 }
 
 function basename(filePath: string): string {
@@ -241,7 +238,7 @@ async function showSamplePanel(
     ${report?.message ? `<section><h2>${escapeHtml(t('message'))}</h2><p>${escapeHtml(report.message)}</p></section>` : ''}
     <section>
       <h2>${escapeHtml(t('actions'))}</h2>
-      ${renderActionButtons(sample.index, problemId, status)}
+      ${renderActionButtons(sample.index, problemId, status, Boolean(report?.checker?.output || report?.checker?.stdout || report?.checker?.stderr))}
     </section>`
   );
 }
@@ -281,7 +278,12 @@ function createPanel(context: vscode.ExtensionContext, title: string, problemId?
   return panel;
 }
 
-function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: SampleReport, problemId?: string): string {
+function renderSampleCard(
+  workspaceFolder: vscode.WorkspaceFolder,
+  report: JudgeReport,
+  sample: SampleReport,
+  problemId?: string
+): string {
   const outputPath = resolveWorkspacePath(workspaceFolder, sample.output ?? sample.actualOutput);
   const sourceType = sample.sampleSourceType ?? 'managed';
   const sampleIndex = getReportSampleIndex(sample);
@@ -305,7 +307,7 @@ function renderSampleCard(workspaceFolder: vscode.WorkspaceFolder, sample: Sampl
     ${renderRuntimeErrorDetails(sample)}
     ${renderCheckerErrorDetails(sample)}
     <p class="path">${escapeHtml(outputPath)}</p>
-    ${renderActionButtons(sampleIndex, problemId, sample.status)}
+    ${renderActionButtons(sampleIndex, problemId, sample.status, isCheckerReport(report) && Boolean(sample.checker?.output || sample.checker?.stdout || sample.checker?.stderr))}
   </article>`;
 }
 
@@ -348,7 +350,12 @@ function renderCheckerErrorDetails(sample: SampleReport): string {
   </section>`;
 }
 
-function renderActionButtons(sampleId: number | undefined, problemId: string | undefined, status: string): string {
+function renderActionButtons(
+  sampleId: number | undefined,
+  problemId: string | undefined,
+  status: string,
+  hasCheckerOutput: boolean
+): string {
   const disabled = problemId && sampleId !== undefined ? '' : ' disabled';
   const diffDisabled = status === 'WA' ? disabled : ' disabled';
   const sampleValue = sampleId ?? '';
@@ -357,9 +364,29 @@ function renderActionButtons(sampleId: number | undefined, problemId: string | u
     <button data-command="expected" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('expectedOutput'))}</button>
     <button data-command="output" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('runResult'))}</button>
     <button data-command="diff" data-sample="${sampleValue}"${diffDisabled}>${escapeHtml(t('openDiff'))}</button>
-    <button data-command="checkerOutput" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('checkerOutput'))}</button>
+    ${hasCheckerOutput ? `<button data-command="checkerOutput" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('checkerOutput'))}</button>` : ''}
     <button data-command="delete" data-sample="${sampleValue}"${disabled}>${escapeHtml(t('delete'))}</button>
   </div>`;
+}
+
+function isCheckerReport(report: JudgeReport): boolean {
+  return report.judgeMode === 'checker' || report.judgeMode === 'testlib' || report.judgeMode === 'plain';
+}
+
+function getReportCheckerType(report: JudgeReport): 'testlib' | 'plain' | undefined {
+  if (report.checkerType === 'testlib' || report.checkerType === 'plain') {
+    return report.checkerType;
+  }
+  if (report.judgeMode === 'testlib' || report.judgeMode === 'plain') {
+    return report.judgeMode;
+  }
+  return report.checker?.type === 'testlib' || report.checker?.type === 'plain' ? report.checker.type : undefined;
+}
+
+function formatCheckerLine(report: JudgeReport): string {
+  const type = getReportCheckerType(report);
+  const typeLabel = type === 'plain' ? t('plainCheckerMode') : type === 'testlib' ? t('testlibCheckerMode') : t('checkerNotSet');
+  return report.checker?.source ? `${typeLabel}: ${basename(report.checker.source)}` : typeLabel;
 }
 
 function getReportSampleIndex(sample: SampleReport): number | undefined {

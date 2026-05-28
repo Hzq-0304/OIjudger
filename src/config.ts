@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { t } from './i18n';
-import { CheckerConfig, OITestConfig, SampleConfig, StackConfig } from './types';
+import { CheckerConfig, JudgeMode, OITestConfig, SampleConfig, StackConfig } from './types';
 
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
   const editor = vscode.window.activeTextEditor;
@@ -173,6 +173,7 @@ export function createDefaultConfig(): OITestConfig {
       auto: true,
       sizeMb: null
     },
+    judgeMode: 'normal',
     checker: {
       enabled: false,
       type: 'none'
@@ -248,6 +249,7 @@ function normalizeConfig(config: OITestConfig): OITestConfig {
       ...config.limits
     },
     stack: normalizeStackConfig(config.stack),
+    judgeMode: normalizeJudgeMode(config.judgeMode, config.checker),
     checker: normalizeCheckerConfig(config.checker),
     samples: config.samples ?? []
   };
@@ -279,6 +281,16 @@ export function normalizeCheckerConfig(checker: CheckerConfig | undefined): Chec
       protocolVersion: checker.plain?.protocolVersion ?? 1
     }
   };
+}
+
+export function normalizeJudgeMode(
+  judgeMode: JudgeMode | undefined,
+  checker: CheckerConfig | undefined
+): JudgeMode {
+  if (judgeMode === 'normal' || judgeMode === 'checker') {
+    return judgeMode;
+  }
+  return checker?.enabled && checker.type !== 'none' ? 'checker' : 'normal';
 }
 
 export function getNextSampleIndex(config: Pick<OITestConfig, 'samples'>): number {
